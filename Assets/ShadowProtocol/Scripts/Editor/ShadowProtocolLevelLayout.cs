@@ -117,7 +117,7 @@ namespace ShadowProtocol.EditorTools
             // ---------- 캣워크(높은 루트) ----------
             var cw = Group(lt, "Catwalk");
             // 데크 z -11..-9.2(폭 1.8m), 경사로 폭 2m(NavMesh 에이전트 반경 0.5m를 고려)
-            if (LoadEnv("catwalk_section") != null)
+            if (LoadEnv("catwalk") != null)
             {
                 // VARCO 캐트워크 모듈(폭 0.99m, 양쪽 난간)을 Z 1.4배(1.39m)로 쓴다. 가운데 구간(x -12..13) 데크는 모듈 폭에 맞추고
                 // 북쪽 난간 = 기존 RailCollider 선(z -9.23), 남쪽 난간(z -10.62)에는 보이지 않는 충돌벽. 경사로가 붙는 양 끝 착지부는 기존 폭(1.8m).

@@ -63,7 +63,9 @@ namespace ShadowProtocol
         public float CurrentDistance => currentDist;
         public float CurrentRaise => raise;
 
-        float yaw, pitch = 15f, targetDist, currentDist, pivotHeight, raise, orbitAngle = 200f, backLimit = 99f;
+        float yaw, pitch = 15f, targetDist, currentDist, pivotHeight, raise, orbitAngle = 200f, backLimit = 99f, sideShift;
+        // 뒤·위가 모두 막혔을 때 시험해 볼 옆 위치(피벗 기준 오른쪽 +, m)
+        static readonly float[] sideCandidates = { 1.1f, -0.6f, -1.1f };
         Vector3 smoothPivot;
         Camera cam;
         readonly List<Renderer> playerRenderers = new List<Renderer>();
@@ -90,6 +92,22 @@ namespace ShadowProtocol
             smoothPivot = Pivot();
             SetTopDown(startTopDown);
             if (cam != null) cam.fieldOfView = GameSettings.Fov;
+            ApplyLayerCulling(cam);
+        }
+
+        public const string SmallDetailLayer = "SmallDetail";
+        public const float SmallDetailCullDistance = 30f;
+
+        /// <summary>작은 장식 층은 30m 넘으면 그리지 않는다(Camera.layerCullDistances는 씬에 저장되지 않아 실행 때 설정)</summary>
+        public static void ApplyLayerCulling(Camera c)
+        {
+            if (c == null) return;
+            int l = LayerMask.NameToLayer(SmallDetailLayer);
+            if (l < 0) return;
+            var d = new float[32];
+            d[l] = SmallDetailCullDistance;
+            c.layerCullDistances = d;
+            c.layerCullSpherical = true;
         }
 
         public void SetAngles(float newYaw, float newPitch)
@@ -107,6 +125,7 @@ namespace ShadowProtocol
             pivotHeight = player.IsCrouching ? crouchPivotHeight : standPivotHeight;
             smoothPivot = Pivot();
             raise = 0f;
+            sideShift = 0f;
             currentDist = targetDist;
             LateUpdate();
         }
@@ -176,20 +195,16 @@ namespace ShadowProtocol
             Quaternion rot = Quaternion.Euler(pitch, yaw, 0f);
 
             // 1) 피벗 → 어깨 지점(옆벽에 붙었을 때 어깨 오프셋이 벽을 뚫지 않게)
+            Vector3 right = rot * Vector3.right;
             Vector3 side = rot * (aiming ? aimShoulderOffset : shoulderOffset);
-            Vector3 shoulder = smoothPivot;
-            float sideLen = side.magnitude;
-            if (sideLen > 0.001f)
-            {
-                float allowedSide = CastDistance(smoothPivot, side / sideLen, sideLen);
-                shoulder = smoothPivot + side / sideLen * allowedSide;
-            }
+            Vector3 shoulder = ClipOffset(smoothPivot, side);
 
             // 2) 어깨 → 뒤쪽. 0.8m보다 가까워지면 0으로 당기는 대신 카메라를 들어 올린다.
             Vector3 back = rot * Vector3.back;
             float want = aiming ? Mathf.Min(aimDistance, targetDist) : targetDist;
             float allowed = CastDistance(shoulder, back, want);
-            float wantRaise = 0f;
+            float wantRaise = 0f, wantSide = 0f;
+            bool fallback = false;
             if (allowed < minCameraDistance && want > minCameraDistance)
             {
                 float upRoom = CastDistance(shoulder, Vector3.up, maxRaise);
@@ -212,12 +227,43 @@ namespace ShadowProtocol
                     // 뒤가 높은 벽이면 머리 위에서 내려다본다(카메라–플레이어 거리는 들어 올린 높이만큼 확보)
                     wantRaise = Mathf.Min(upRoom, maxRaise);
                     backLimit = Mathf.Max(allowed, 0.05f);
+                    fallback = true;
+                }
+
+                // 문틀 안에서 옆을 볼 때처럼 뒤도 위(상인방)도 막히면 카메라를 옆(문 통로 쪽)으로 비켜 세운다
+                if (!aiming)
+                {
+                    Vector3 rc = shoulder + Vector3.up * wantRaise + back * (fallback ? backLimit : Mathf.Min(bestA, want));
+                    float bestScore = (rc - smoothPivot).magnitude;
+                    if (bestScore < 1.0f)
+                    {
+                        foreach (float s in sideCandidates)
+                        {
+                            Vector3 o = ClipOffset(smoothPivot, right * s);
+                            float a2 = CastDistance(o, back, want);
+                            Vector3 c2 = o + back * a2;
+                            Vector3 toC = c2 - smoothPivot;
+                            float sc = toC.magnitude;
+                            if (sc < 0.05f || CastDistance(smoothPivot, toC / sc, sc) < sc - 0.06f) continue;
+                            // 이미 비켜 선 쪽을 조금 더 선호해 좌우로 튀지 않게
+                            if (sideShift * s > 0f) sc += 0.2f;
+                            if (sc > bestScore + 0.15f) { bestScore = sc; wantSide = s; }
+                        }
+                        if (wantSide != 0f) { wantRaise = 0f; fallback = false; backLimit = want; }
+                    }
                 }
             }
+            float baseSide = Vector3.Dot(side, right);
+            float wantShift = wantSide != 0f ? wantSide - baseSide : 0f;
+            sideShift = Mathf.Lerp(sideShift, wantShift, 1f - Mathf.Exp(-8f * dt));
+            if (Mathf.Abs(sideShift) > 0.01f) shoulder = ClipOffset(smoothPivot, side + right * sideShift);
+
             raise = Mathf.Lerp(raise, wantRaise, 1f - Mathf.Exp(-(wantRaise > raise ? 12f : 4f) * dt));
-            Vector3 raisedShoulder = shoulder + Vector3.up * raise;
-            // 거리는 항상 실제(들어 올리는 중인) 높이에서 다시 잰다: 올라가는 동안 벽을 뚫지 않는다
-            float finalAllowed = raise > 0.01f ? Mathf.Min(CastDistance(raisedShoulder, back, want), wantRaise > 0f ? backLimit : want) : allowed;
+            // 실제 어깨 지점에서 위 공간을 다시 재서 들어 올린 높이가 상인방을 넘지 않게
+            float usedRaise = raise > 0.01f ? Mathf.Min(raise, CastDistance(shoulder, Vector3.up, raise)) : 0f;
+            Vector3 raisedShoulder = shoulder + Vector3.up * usedRaise;
+            // 거리는 항상 실제(들어 올리는·비켜 서는 중인) 지점에서 다시 잰다: 움직이는 동안 벽을 뚫지 않는다
+            float finalAllowed = Mathf.Min(CastDistance(raisedShoulder, back, want), wantRaise > 0f ? backLimit : want);
             if (finalAllowed < currentDist) currentDist = finalAllowed;
             else currentDist = Mathf.Lerp(currentDist, finalAllowed, 1f - Mathf.Exp(-5f * dt));
 
@@ -267,6 +313,14 @@ namespace ShadowProtocol
                 if (b.Contains(camPos) || (b.IntersectRay(ray, out float hit) && hit < len - 0.2f))
                     f.SetTarget(f.fadedAlpha);
             }
+        }
+
+        /// <summary>origin에서 offset만큼 옮기되 벽에 막히면 그 앞까지만</summary>
+        Vector3 ClipOffset(Vector3 origin, Vector3 offset)
+        {
+            float len = offset.magnitude;
+            if (len < 0.001f) return origin;
+            return origin + offset / len * CastDistance(origin, offset / len, len);
         }
 
         float CastDistance(Vector3 origin, Vector3 dir, float maxDist)

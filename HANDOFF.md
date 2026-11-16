@@ -27,12 +27,13 @@
 
 ## 3. 지금 상태 (2026-11-13)
 - 끝남: 위 시스템 전부, 빌드 경비 정지 버그 수정(NavMeshAgent를 끈 채 저장 → `NavBootstrap`이 NavMesh 확인 후 켬, exe 실행 로그로 경비 5명 30초 24~53m 이동 확인), 자막 조사 처리(`Josa.cs`), 크레딧을 사실대로 정리.
-- 보류: Blender 최종본을 기다리는 에셋. `ShadowProtocolSceneBuilder.HoldContainerV2 = true`, `HoldEnvModules = true`. 최종본으로 교체한 뒤 false로 바꾸고 씬을 다시 만든다.
+- 2026-11-16 오후: Blender 최종본 환경 10종·컨테이너를 씬에 반영(`HoldEnvModules = false`, `HoldContainerV2 = false`). 가져오기 메뉴 `ShadowProtocol/Import Env Final (Blender)`·`Import Container Final (Blender)` → `Build Demo Scene`. 검증 수치는 PROGRESS.md.
+- 2026-11-16: 봇 2루트 탈출·캣워크 적응 확인, 카메라 문틀 '옆으로 비켜 서기'(0.8m 미만 25→8/12,464), 드로우콜 축소(그림자 2단·45m, 작업등 강제 픽셀 3, 인스턴싱, farClip 100m, 벽 가림 컬링 → 6개 시점 합계 6,078→4,170), 재빌드 후 `-autotest` PASS, 스크린샷 `Captures/p4_*.png`. 자세한 수치는 PROGRESS.md.
 - 남음
-  1. 봇 2루트 탈출, 카메라 관통 검사, 재빌드 후 `-autotest` 재확인, 스크린샷
-  2. Blender 최종본(환경 7종·컨테이너·인물 3명·애니메이션 9종)을 받아 교체
-  3. 새 인물 반영: 플레이어 = 여성 잠입 요원, 중무장 경비병·경비 반장 v2
-- 알려진 문제: 소리는 귀로 확인 못 함(코드 합성음), 드로우콜 많음, 문 상인방 아래 카메라 거리 0.62~0.77m(일부), 빌드 용량 약 314MB.
+  1. (끝남, 위 2026-11-16 참고)
+  2. (끝남) Blender 최종본 전부 반영: 환경·컨테이너·인물 3명·애니메이션 18개(2026-11-16, PROGRESS.md)
+  3. (끝남) 플레이어 = 여성 잠입 요원, 경비 = 중무장 경비병(Yard·West·Vault·Door) / 경비 반장(Center·Office). 가져오기 메뉴 `ShadowProtocol/Import Characters Final (Blender)` → `Setup Animations`(씬 빌드에 포함)
+- 알려진 문제: 소리는 귀로 확인 못 함(코드 합성음), 드로우콜 6개 시점 합계 4,679(2026-11-16 저녁, pixelLightCount 2·펜스 합치기·작은 장식 30m 컬링 반영), 좁은 복도 문틀에서 옆을 볼 때 카메라 거리 0.65~0.70m(드묾), 빌드 용량 약 416MB.
 
 ## 4. 아트 파이프라인 (반드시 지킬 규칙)
 1. **VARCO 3D**에서 이미지 → 3D 메시(→ 리깅·애니메이션) 생성. 프롬프트·생성 이미지·원본 메시는 `ArtSource/<분류>/01_varco_source/`에 보관.

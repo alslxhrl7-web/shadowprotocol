@@ -21,8 +21,10 @@ namespace ShadowProtocol.EditorTools
         const string NavAssetPath = NavFolder + "/NavMesh-Level.asset";
         const string TexFolder = "Assets/ShadowProtocol/Textures";
         static readonly Color NightColor = new Color(0.04f, 0.05f, 0.09f);
-        public const string PlayerModelPath = "Assets/ShadowProtocol/Models/SP_Player.fbx";
-        public const string GuardModelPath = "Assets/ShadowProtocol/Models/SP_Guard.fbx";
+        // 인물: Blender 최종본(2026-11-16). 플레이어 = 여성 잠입 요원, 경비 = 중무장 경비병(기본) / 경비 반장("super" 지정 초소)
+        public const string PlayerModelPath = "Assets/ShadowProtocol/Models/CharactersFinal/female_agent_final.fbx";
+        public const string GuardModelPath = "Assets/ShadowProtocol/Models/CharactersFinal/heavyguard_v2_final.fbx";
+        public const string CaptainModelPath = "Assets/ShadowProtocol/Models/CharactersFinal/supervisor_v2_final.fbx";
 
         [MenuItem("ShadowProtocol/Build Demo Scene")]
         public static void Build()
@@ -167,7 +169,7 @@ namespace ShadowProtocol.EditorTools
             Primitive(PrimitiveType.Capsule, pVisual, "Body", new Vector3(0f, 0.9f, 0f), new Vector3(0.7f, 0.9f, 0.7f), mPlayer);
             Primitive(PrimitiveType.Cube, pVisual, "Visor", new Vector3(0f, 1.5f, 0.3f), new Vector3(0.45f, 0.14f, 0.2f), mPlayerVisor);
             pc.visual = pVisual;
-            AttachModel(playerGO.transform, PlayerModelPath, pVisual.GetComponentsInChildren<Renderer>(), 1.75f, pc);
+            AttachModel(playerGO.transform, PlayerModelPath, pVisual.GetComponentsInChildren<Renderer>(), 1.705f, pc);
 
             var ringGO = new GameObject("NoiseRing");
             ringGO.transform.SetParent(playerGO.transform, false);
@@ -202,7 +204,7 @@ namespace ShadowProtocol.EditorTools
             cam.backgroundColor = NightColor;
             cam.fieldOfView = 60f;
             cam.nearClipPlane = 0.1f;
-            cam.farClipPlane = 200f;
+            cam.farClipPlane = 100f; // 맵 대각선 약 70m + 먼 건물 실루엣. 200m는 불필요한 원경까지 그렸다.
             camGO.AddComponent<AudioListener>();
             // 전술(탑다운) 시점: Tab/V로 전환. 확장 맵 전체를 따라가도록 초점 범위를 넓힌다.
             var follow = camGO.AddComponent<TopDownCamera>();
@@ -256,6 +258,14 @@ namespace ShadowProtocol.EditorTools
             {
                 Debug.LogError("[ShadowProtocol] NavMesh 베이크 결과가 비어 있습니다.");
             }
+
+            // 가림 컬링(Occlusion Culling): 벽(OccluderStatic) 뒤의 물체를 그리지 않는다
+            StaticOcclusionCulling.smallestOccluder = 2f;
+            StaticOcclusionCulling.smallestHole = 0.25f;
+            if (StaticOcclusionCulling.Compute())
+                Debug.Log($"[ShadowProtocol] 가림 컬링 데이터 굽기 완료 ({StaticOcclusionCulling.umbraDataSize / 1024f:0.0} KB)");
+            else
+                Debug.LogWarning("[ShadowProtocol] 가림 컬링 데이터 굽기 실패");
 
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, ScenePath);
@@ -324,13 +334,10 @@ namespace ShadowProtocol.EditorTools
             var gBody = Primitive(PrimitiveType.Capsule, g.transform, "Body", new Vector3(0f, 0.95f, 0f), new Vector3(0.8f, 0.95f, 0.8f), ctx.body);
             var gVisor = Primitive(PrimitiveType.Cube, g.transform, "Visor", new Vector3(0f, 1.6f, 0.33f), new Vector3(0.55f, 0.14f, 0.2f), ctx.visor);
             // 경비병마다 다른 모델(없으면 기본 경비병)
-            string gModel = GuardModelPath; float gHeight = 1.85f;
-            // 모델: model = "heavy"/"super"/null(기본). null이면 이름으로 매핑(예전 호환)
-            bool wantHeavy = model == "heavy" || (model == null && name == "Guard_Vault");
-            bool wantSuper = model == "super" || (model == null && name == "Guard_Center");
-            if (wantHeavy && AssetDatabase.LoadAssetAtPath<GameObject>(SP2Root + "SP2_heavyguard.fbx") != null) { gModel = SP2Root + "SP2_heavyguard.fbx"; gHeight = 1.88f; }
-            else if (wantSuper && AssetDatabase.LoadAssetAtPath<GameObject>(SP2Root + "SP2_supervisor.fbx") != null) { gModel = SP2Root + "SP2_supervisor.fbx"; gHeight = 1.80f; }
-            // (예전 이름 기반 매핑은 위 wantHeavy/wantSuper에 포함)
+            // 모델: "super" = 경비 반장(중앙 순찰·사무동 감독관), 그 밖 = 중무장 경비병
+            bool wantSuper = model == "super";
+            string gModel = wantSuper ? CaptainModelPath : GuardModelPath;
+            float gHeight = wantSuper ? 1.804f : 1.903f;
             AttachModel(g.transform, gModel, new[] { gBody.GetComponent<Renderer>(), gVisor.GetComponent<Renderer>() }, gHeight, null);
             var orb = Primitive(PrimitiveType.Sphere, g.transform, "StatusOrb", new Vector3(0f, 2.15f, 0f), Vector3.one * 0.22f, ctx.orb);
             orb.GetComponent<Renderer>().shadowCastingMode = ShadowCastingMode.Off;
@@ -710,16 +717,17 @@ namespace ShadowProtocol.EditorTools
         // ---------------- SP2 props ----------------
 
         const string SP2Root = "Assets/ShadowProtocol/Models/SP2/";
-        /// <summary>보류: 컨테이너 v2는 Blender 고품질 최종본으로 교체된 뒤에 쓴다(교체 후 false). true면 기존 VARCO 컨테이너 사용.</summary>
-        public static bool HoldContainerV2 = true;
+        /// <summary>보류: true면 기존 VARCO 컨테이너 사용. 2026-11-16 Blender 최종본(container_final) 반영 → false.</summary>
+        public static bool HoldContainerV2 = false;
+        public const string ContainerFinalPath = "Assets/ShadowProtocol/Models/ContainerFinal/container_final.fbx";
 
         static GameObject LoadSP2(string n)
         {
-            // 컨테이너: Blender 고품질 리빌드(container_v2, LOD0/1/2 포함)가 들어오면 그것을 쓴다
+            // 컨테이너: Blender 최종본(container_final, ISO 20ft, LOD0/1/2 → LODGroup)이 있으면 그것을 쓴다
             if (n == "container" && !HoldContainerV2)
             {
-                var v2 = AssetDatabase.LoadAssetAtPath<GameObject>(SP2Root + "SP2_container_v2.fbx");
-                if (v2 != null) return v2;
+                var fin = AssetDatabase.LoadAssetAtPath<GameObject>(ContainerFinalPath);
+                if (fin != null) return fin;
             }
             return AssetDatabase.LoadAssetAtPath<GameObject>(SP2Root + "SP2_" + n + ".fbx");
         }
@@ -783,8 +791,7 @@ namespace ShadowProtocol.EditorTools
         {
             var prefab = LoadSP2(model);
             if (prefab == null) return null;
-            // 컨테이너 v2(Blender 리빌드)는 길이 축이 +Z(이전 VARCO 모델은 +X)라 90° 돌려 기존 배치 방향을 유지한다
-            if (model == "container" && prefab.name == "SP2_container_v2") yaw += 90f;
+            // 컨테이너 최종본(container_final)은 길이 축이 X로 이전 VARCO 모델과 같아 회전 보정이 필요 없다
             var h = SpawnProp(prefab, parent, pos, Quaternion.Euler(0f, yaw, 0f), Vector3.one);
             h.name = name;
             var wb = WorldMeshBounds(h.transform);
@@ -859,7 +866,7 @@ namespace ShadowProtocol.EditorTools
                 else if (t.name.StartsWith("Crate")) FillBox(t, crate);
             }
             foreach (Transform t in walls)
-                if (t.name.StartsWith("Partition")) DressPartition(t, wall, capMat);
+                if (t.name.StartsWith("Partition") && LoadEnv("wall") == null) DressPartition(t, wall, capMat); // 벽 최종본이 있으면 ApplyEnvironmentModules가 칸막이도 env_wall로
         }
 
         static Vector3 PrefabSize(GameObject prefab)
@@ -1037,6 +1044,7 @@ namespace ShadowProtocol.EditorTools
                 m.shader = shader;
             }
 
+            m.enableInstancing = true; // 정적 배칭에서 빠지는 반복 물체(경비·소품 등)를 인스턴싱으로 묶는다
             m.color = c;
             if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", c);
             if (m.HasProperty("_Glossiness")) m.SetFloat("_Glossiness", 0.15f);
@@ -1066,6 +1074,7 @@ namespace ShadowProtocol.EditorTools
                 AssetDatabase.CreateAsset(m, path);
             }
             else m.shader = shader;
+            m.enableInstancing = true;
             m.color = Color.white;
             m.renderQueue = 3000;
             EditorUtility.SetDirty(m);

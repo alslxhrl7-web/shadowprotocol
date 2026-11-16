@@ -30,7 +30,10 @@ namespace ShadowProtocol.EditorTools
         {
             var animr = inst.GetComponent<Animator>();
             if (animr == null) return;
-            var ctrl = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(pc != null ? ShadowProtocolAnimBuilder.PlayerControllerPath : ShadowProtocolAnimBuilder.GuardControllerPath);
+            // 인물별 컨트롤러(같은 동작이라도 인물마다 리타깃한 클립·걷기/달리기 속도가 다르다)
+            string src = AssetDatabase.GetAssetPath(PrefabUtility.GetCorrespondingObjectFromSource(inst));
+            string who = pc != null ? ShadowProtocolAnimBuilder.Player : src.Contains(ShadowProtocolAnimBuilder.Captain) ? ShadowProtocolAnimBuilder.Captain : ShadowProtocolAnimBuilder.Heavy;
+            var ctrl = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(ShadowProtocolAnimBuilder.ControllerPath(who));
             if (ctrl == null) return;
             animr.runtimeAnimatorController = ctrl;
             animr.applyRootMotion = false;
@@ -38,10 +41,11 @@ namespace ShadowProtocol.EditorTools
             var drv = inst.AddComponent<CharacterAnimDriver>();
             drv.mover = owner;
             drv.player = pc;
-            drv.runNatural = pc != null ? ShadowProtocolAnimBuilder.PlayerRunNatural : ShadowProtocolAnimBuilder.GuardRunNatural;
+            drv.runNatural = ShadowProtocolAnimBuilder.RunNatural(who);
             drv.crouchWalkNatural = ShadowProtocolAnimBuilder.PlayerCrouchWalkNatural;
             // 던지기: 원본 2.2s에 손이 나간다 → (2.2 - 시작 오프셋) / 재생 속도
-            float clipLen = 3.4f;
+            var thrClip = ShadowProtocolAnimBuilder.Clip(ShadowProtocolAnimBuilder.Player, "Throw");
+            float clipLen = thrClip != null ? thrClip.length : 3.4f;
             drv.throwReleaseDelay = Mathf.Max(0.1f, (2.2f - ShadowProtocolAnimBuilder.ThrowStartNormalized * clipLen) / ShadowProtocolAnimBuilder.ThrowSpeed);
             drv.throwDuration = (0.9f - ShadowProtocolAnimBuilder.ThrowStartNormalized) * clipLen / ShadowProtocolAnimBuilder.ThrowSpeed + 0.2f;
         }
@@ -321,10 +325,31 @@ namespace ShadowProtocol.EditorTools
                 {
                     if (t.GetComponentInParent<CameraFadeable>() != null) continue;
                     if (t.GetComponent<Light>() != null) continue;
-                    GameObjectUtility.SetStaticEditorFlags(t.gameObject, StaticEditorFlags.BatchingStatic | StaticEditorFlags.OccludeeStatic);
+                    // 펜스 모듈(같은 메시 반복)은 정적 배칭 대신 GPU 인스턴싱으로 묶는다
+                    bool instanced = IsUnder(t, "FenceModules");
+                    GameObjectUtility.SetStaticEditorFlags(t.gameObject, instanced ? StaticEditorFlags.OccludeeStatic : StaticEditorFlags.BatchingStatic | StaticEditorFlags.OccludeeStatic);
                     statics++;
                 }
             }
+
+            // 벽: 가리는 물체(Occluder)로 표시 → Build()에서 StaticOcclusionCulling.Compute()로 굽는다
+            int occluders = 0;
+            var walls = GameObject.Find("Level/Walls");
+            if (walls != null)
+                foreach (var r in walls.GetComponentsInChildren<MeshRenderer>(true))
+                {
+                    if (!r.enabled || r.GetComponentInParent<CameraFadeable>() != null) continue;
+                    var go = r.gameObject;
+                    GameObjectUtility.SetStaticEditorFlags(go, GameObjectUtility.GetStaticEditorFlags(go) | StaticEditorFlags.OccluderStatic | StaticEditorFlags.OccludeeStatic | StaticEditorFlags.BatchingStatic);
+                    occluders++;
+                }
+
+            // 그림자: 계단식 4→2, 거리 150→45m(창고 안은 대부분 30m 이내, 그림자 내는 건 달빛 하나뿐)
+            QualitySettings.shadowCascades = 2;
+            QualitySettings.shadowDistance = 45f;
+            QualitySettings.shadowCascade2Split = 0.25f;
+            // 물체마다 받는 픽셀 조명 4→2(나머지는 정점 조명). 홀은 강제 픽셀 작업등 3개, 야드·사무·서버실은 화면 비교에서 차이 거의 없음
+            QualitySettings.pixelLightCount = 2;
 
             // 소품: 화면에서 1.2% 미만이면 그리지 않는다(멀리 있는 작은 소품)
             int lods = 0;
@@ -340,22 +365,67 @@ namespace ShadowProtocol.EditorTools
                 if (model != null) { AddCullLod(model.gameObject, 0.008f); lods++; }
             }
 
-            // 조명: 홀 작업등 8개 중 6개만 픽셀 조명, 사무동 벽등은 Auto(가장 가까운 것만 픽셀)
+            // 조명: 홀 작업등 8개 중 3개만 강제 픽셀 조명(엇갈리게 배치), 나머지·사무동 벽등은 Auto(가까운 것만 픽셀)
             int pixel = 0;
             var work = GameObject.Find("Environment/WorkLights");
             if (work != null)
             {
-                int i = 0;
-                foreach (var l in work.GetComponentsInChildren<Light>())
-                {
-                    l.renderMode = (i == 0 || i == 3) ? LightRenderMode.Auto : LightRenderMode.ForcePixel;
-                    i++;
-                }
+                var ls = work.GetComponentsInChildren<Light>();
+                // 엇갈리게 고른 3개. 기본 도형 8개(x -10,-2,5,12 × 남·북): 남 -2 / 북 -10 / 북 5
+                // 트러스 모듈 10개(x -12,-6,0,6,12 × 남·북): 남 -6 / 남 6 / 북 0
+                var pick = ls.Length == 10 ? new[] { 1, 3, 7 } : new[] { 1, 4, 6 };
+                for (int i = 0; i < ls.Length; i++)
+                    ls[i].renderMode = System.Array.IndexOf(pick, i) >= 0 ? LightRenderMode.ForcePixel : LightRenderMode.Auto;
             }
             var annex = GameObject.Find("Environment/AnnexLights");
             if (annex != null) foreach (var l in annex.GetComponentsInChildren<Light>()) l.renderMode = LightRenderMode.Auto;
             foreach (var l in Object.FindObjectsByType<Light>(FindObjectsSortMode.None)) if (l.renderMode == LightRenderMode.ForcePixel) pixel++;
-            Debug.Log($"[ShadowProtocol] 성능 설정: 정적 오브젝트 {statics}, LOD 컬링 {lods}, ForcePixel 조명 {pixel}");
+
+            // 바닥에 붙은 납작한 장식(높이 5cm 미만: 안전선·주차선·배수구 덮개·시작 패드 등)은 그림자를 내지 않는다(그림자 캐스터 패스 절약)
+            int flat = 0;
+            foreach (var r in Object.FindObjectsByType<MeshRenderer>(FindObjectsSortMode.None))
+                if (r.enabled && r.shadowCastingMode == ShadowCastingMode.On && r.bounds.size.y < 0.05f) { r.shadowCastingMode = ShadowCastingMode.Off; flat++; }
+
+            // 작은 장식(주차선·배수구, 장식용 보안 카메라, 장식 소품)은 SmallDetail 층에 두고 카메라에서 30m 넘으면 그리지 않는다
+            // (Camera.layerCullDistances는 저장되지 않아 ThirdPersonCamera.Start에서 설정)
+            int small = 0;
+            int layer = EnsureLayer(SmallDetailLayer);
+            if (layer >= 0)
+                foreach (var rootName in new[] { "Environment/ParkingLines", "SecurityCameras", "DecorProps" })
+                {
+                    var root = GameObject.Find(rootName);
+                    if (root == null) continue;
+                    foreach (var t in root.GetComponentsInChildren<Transform>(true))
+                    {
+                        t.gameObject.layer = layer;
+                        if (t.GetComponent<Renderer>() != null) small++;
+                    }
+                }
+            Debug.Log($"[ShadowProtocol] 성능 설정: 정적 오브젝트 {statics}, 가림 벽 {occluders}, LOD 컬링 {lods}, ForcePixel 조명 {pixel}, 픽셀 조명 수 {QualitySettings.pixelLightCount}, 그림자 {QualitySettings.shadowCascades}단 {QualitySettings.shadowDistance}m, 그림자 끈 납작 장식 {flat}, 30m 컬링 작은 장식 {small}");
+        }
+
+        public const string SmallDetailLayer = ThirdPersonCamera.SmallDetailLayer;
+
+        /// <summary>프로젝트 층(TagManager)에 이름이 없으면 빈 사용자 층(8~31)에 만든다. 층 번호를 돌려준다.</summary>
+        static int EnsureLayer(string name)
+        {
+            int existing = LayerMask.NameToLayer(name);
+            if (existing >= 0) return existing;
+            var tm = new SerializedObject(AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/TagManager.asset")[0]);
+            var layers = tm.FindProperty("layers");
+            for (int i = 8; i < layers.arraySize; i++)
+            {
+                var p = layers.GetArrayElementAtIndex(i);
+                if (string.IsNullOrEmpty(p.stringValue)) { p.stringValue = name; tm.ApplyModifiedProperties(); return i; }
+            }
+            Debug.LogWarning("[ShadowProtocol] 빈 층이 없어 " + name + " 층을 만들지 못함");
+            return -1;
+        }
+
+        static bool IsUnder(Transform t, string ancestorName)
+        {
+            for (var p = t; p != null; p = p.parent) if (p.name == ancestorName) return true;
+            return false;
         }
 
         static void AddCullLod(GameObject go, float cullHeight)
@@ -379,6 +449,7 @@ namespace ShadowProtocol.EditorTools
                 var imp = AssetImporter.GetAtPath(p) as ModelImporter;
                 if (imp == null || imp.generateMeshLods) continue;
                 if (p.EndsWith("SP2_container_v2.fbx")) continue; // Blender에서 만든 LOD0/1/2(LODGroup)를 쓴다
+                if (p.Contains("/Models/EnvFinal/") || p.Contains("/Models/ContainerFinal/") || p.Contains("/Models/CharactersFinal/")) continue; // Blender 최종본은 원래 메시(컨테이너는 자체 LOD0/1/2) 그대로
                 imp.generateMeshLods = true;
                 imp.SaveAndReimport();
                 changed++;

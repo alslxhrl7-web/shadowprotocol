@@ -73,22 +73,17 @@ namespace ShadowProtocol.EditorTools
                     model = LoadSP2(id),
                     controller = character ? guardCtrl : null,
                     yaw = 30f,
-                    pending = id == "container" && LoadSP2("container").name != "SP2_container_v2"
+                    pending = id == "container" && LoadSP2("container").name != "container_final"
                 };
             }
 
-            list.Add(LoadSP2("container") != null && LoadSP2("container").name == "SP2_container_v2" ? ContainerV2Card() : Card("container", "07", "컨테이너"));
-            list.Add(new MakingOfGallery.Entry
-            {
-                title = "플레이어(잠입 요원)", note = "VARCO 3D 생성 → Blender 정리·리깅 → VARCO Animate 애니메이션 9종(Humanoid 리타겟)\n공정 이미지는 자료를 받는 대로 추가. 지금은 게임 모델 턴테이블만.",
-                stages = new MakingOfGallery.Stage[0], model = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerModelPath), controller = playerCtrl, yaw = 30f
-            });
-            list.Add(new MakingOfGallery.Entry
-            {
-                title = "경비병", note = "VARCO 3D 생성 → Blender 정리·리깅 → VARCO Animate 애니메이션(Humanoid 리타겟)\n공정 이미지는 자료를 받는 대로 추가. 지금은 게임 모델 턴테이블만.",
-                stages = new MakingOfGallery.Stage[0], model = AssetDatabase.LoadAssetAtPath<GameObject>(GuardModelPath), controller = guardCtrl, yaw = 30f
-            });
-            foreach (var c in SP2Cards) if (c.id != "container") list.Add(Card(c.id, c.num, c.title));
+            list.Add(LoadSP2("container") != null && LoadSP2("container").name == "container_final" ? ContainerV2Card() : Card("container", "07", "컨테이너"));
+            var captainCtrl = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(ShadowProtocolAnimBuilder.CaptainControllerPath);
+            list.Add(CharacterCard("female_agent", "플레이어(여성 잠입 요원)", PlayerModelPath, playerCtrl, 1.705f, new[] { "Idle", "Walk", "Run", "CrouchIdle", "CrouchWalk", "Throw" }));
+            list.Add(CharacterCard("heavyguard_v2", "중무장 경비병", GuardModelPath, guardCtrl, 1.903f, new[] { "Idle", "Walk", "Run", "LookAround", "HitFall", "Talk" },
+                "\n리그 수리: VARCO 원본은 상체 뼈 이름이 뒤섞여(오른팔이 Left*, 왼팔이 Head 한 뼈) 왼팔을 오른팔 미러로 다시 세움"));
+            list.Add(CharacterCard("supervisor_v2", "경비 반장", CaptainModelPath, captainCtrl, 1.804f, new[] { "Idle", "Walk", "Run", "LookAround", "HitFall", "Talk" }));
+            foreach (var c in SP2Cards) if (c.id != "container" && c.id != "heavyguard" && c.id != "supervisor") list.Add(Card(c.id, c.num, c.title));
             foreach (var p in new[] { ("Prop_Shelf", "선반"), ("Prop_Crate", "나무 상자"), ("Prop_Bins", "수납함"), ("Prop_DataCore", "데이터 코어 단말기"), ("Prop_Wall", "벽 패널") })
                 list.Add(new MakingOfGallery.Entry
                 {
@@ -97,6 +92,34 @@ namespace ShadowProtocol.EditorTools
                 });
             gal.entries = list.ToArray();
             return gal;
+        }
+
+        const string CharacterArt = @"C:\Users\mbc\Documents\user\ShadowProtocol\ArtSource\Characters\03_renders_final";
+
+        /// <summary>인물 최종본 카드: [VARCO 원본 → Blender 최종 전후 → 얼굴·장비 근접 → T포즈·피부 테스트 → 애니메이션 프레임 시트 → 게임 모델]</summary>
+        static MakingOfGallery.Entry CharacterCard(string id, string title, string modelPath, RuntimeAnimatorController ctrl, float height, string[] clips, string extra = "")
+        {
+            string dir = MakingOfDir + "/characters";
+            var stages = new List<MakingOfGallery.Stage>();
+            void Img(string file, string caption)
+            {
+                var s = ImportSprite(Path.Combine(CharacterArt, file), $"{dir}/{file.Replace('\\', '_').Replace('@', '_')}");
+                if (s != null) stages.Add(new MakingOfGallery.Stage { caption = caption, image = s });
+            }
+            Img($"{id}_before_after.png", "VARCO 원본 → Blender 최종본 전후 비교");
+            Img($"{id}_closeup.png", "Blender 최종본 — 얼굴·장비 근접");
+            Img("characters_tpose_front.png", "세 인물 T포즈(정면) — 같은 23뼈 Humanoid 리그");
+            Img("characters_skin_test_side.png", "피부 테스트(팔·무릎 굽힘)");
+            foreach (var c in clips) Img($"anims\\{id}@{c}.png", $"애니메이션 {c} — 리타깃·발 고정·루프 정리");
+            return new MakingOfGallery.Entry
+            {
+                title = title,
+                note = $"VARCO 3D 생성 → Blender 다듬기(키 {height:0.000}m, 정점 용접·형상 정리·텍스처 재도색·AO, 가중치 완화) → VARCO Animate 동작을 Blender에서 리타깃·발 고정·루프 정리 → Unity Humanoid" + extra,
+                stages = stages.ToArray(),
+                model = AssetDatabase.LoadAssetAtPath<GameObject>(modelPath),
+                controller = ctrl,
+                yaw = 30f
+            };
         }
 
         const string ContainerArt = @"C:\Users\mbc\Documents\user\ShadowProtocol\ArtSource\Container";
@@ -121,16 +144,17 @@ namespace ShadowProtocol.EditorTools
             }
             Img("01_varco_source", "varco_generated_image.png", "VARCO 생성 이미지(GenerateImage)");
             Img("03_renders", "varco_raw_matcap.png", "VARCO 3D 원본 메시(Generate3D) — 매트캡");
-            Img("03_renders", "refined_matcap.png", "Blender 정리 — 형태 다듬기(매트캡)");
-            Img("03_renders", "wireframe_lod.png", "Blender 정리 — LOD0/1/2 와이어프레임");
-            Img("03_renders", "texture_maps_sheet.png", "Blender 정리 — PBR 텍스처 맵(BaseColor·Normal·MetallicSmoothness·Occlusion)");
-            Img("03_renders", "before_after.png", "VARCO 원본 → Blender 정리 전후 비교");
-            Img("03_renders", "final_beauty_front.png", "Blender 최종 렌더(정면)");
-            for (int i = 1; i <= 8; i++) Img("03_renders", $"turntable_{i:00}.png", $"Blender 턴테이블 {i}/8");
+            // Blender 최종본(ISO 20ft 치수로 새로 모델링, 03_renders_final)
+            Img("03_renders_final", "container_before_after.png", "VARCO 원본 → Blender 최종본 전후 비교");
+            Img("03_renders_final", "container_matcap_lods.png", "Blender 최종본 — LOD0/1/2 형태(매트캡)");
+            Img("03_renders_final", "container_closeup_doors.png", "Blender 최종본 — 문 철물 근접");
+            Img("03_renders_final", "container_closeup_corner.png", "Blender 최종본 — 모서리 주물 근접");
+            Img("03_renders_final", "container_beauty_doors.png", "Blender 최종 렌더(문 쪽)");
+            Img("03_renders_final", "container_beauty_front.png", "Blender 최종 렌더(앞 벽 쪽)");
             return new MakingOfGallery.Entry
             {
-                title = "컨테이너 v2",
-                note = "VARCO 프롬프트 → VARCO 생성 이미지 → VARCO 3D 원본 → Blender 정리(형태·LOD 3단계·PBR 텍스처) → 게임 안\n치수 2.435 × 5.688 × 2.746m, 야드 컨테이너 전부 이 모델로 교체",
+                title = "컨테이너(최종본)",
+                note = "VARCO 프롬프트 → VARCO 생성 이미지 → VARCO 3D 원본(옆판 물결·철물 뭉개짐) → Blender에서 ISO 20ft 치수로 새로 모델링(골판·주물·문 철물, LOD 5550/2578/928 tris, PBR 5종) → 게임 안\n치수 6.058 × 2.438 × 2.591m, 야드 컨테이너 전부 이 모델로 교체",
                 stages = stages.ToArray(),
                 model = LoadSP2("container"),
                 yaw = 30f,

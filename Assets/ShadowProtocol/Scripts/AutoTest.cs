@@ -51,6 +51,8 @@ namespace ShadowProtocol
 
         IEnumerator Start()
         {
+            // 창이 포커스를 잃어도 멈추지 않게(플레이어 설정 runInBackground=false라 자동 검증이 배경에서 멈췄다)
+            Application.runInBackground = true;
             var v = ArgValue("-autotest-seconds");
             if (v != null && float.TryParse(v, out float f) && f > 1f) seconds = f;
             Debug.Log($"[AutoTest] 시작: {seconds:0}초 동안 경비 이동 거리 측정");

@@ -5,43 +5,54 @@ using UnityEngine;
 namespace ShadowProtocol.EditorTools
 {
     /// <summary>
-    /// VARCO Animate 애니메이션 FBX(Assets/ShadowProtocol/Animations/Source)를 Humanoid 클립으로 설정하고
-    /// 플레이어용·경비용 Animator Controller를 만든다. 메뉴 ShadowProtocol/Setup Animations, 씬 빌드에서도 호출.
+    /// Blender 최종 애니메이션(Assets/ShadowProtocol/Animations/Final/&lt;인물&gt;@&lt;클립&gt;.fbx, 메뉴 Import Characters Final로 복사)을
+    /// Humanoid 클립으로 설정하고(아바타는 같은 인물 최종 모델에서 복사) 인물별 Animator Controller를 만든다.
+    /// 메뉴 ShadowProtocol/Setup Animations, 씬 빌드에서도 호출.
+    /// 클립 구간(Walk 31–65 등)·정면 보정·루프 이음매·발 고정은 Blender에서 이미 구웠으므로 여기서는 자르거나 돌리지 않는다.
     /// </summary>
     public static class ShadowProtocolAnimBuilder
     {
-        public const string SourceDir = "Assets/ShadowProtocol/Animations/Source/";
+        public const string SourceDir = "Assets/ShadowProtocol/Animations/Final/";
+        public const string ModelDir = "Assets/ShadowProtocol/Models/CharactersFinal/";
         public const string Dir = "Assets/ShadowProtocol/Animations/";
         public const string PlayerControllerPath = Dir + "SP_PlayerAnimator.controller";
-        public const string GuardControllerPath = Dir + "SP_GuardAnimator.controller";
+        public const string GuardControllerPath = Dir + "SP_GuardAnimator.controller";            // 중무장 경비병
+        public const string CaptainControllerPath = Dir + "SP_GuardCaptainAnimator.controller";   // 경비 반장
         public const string UpperMaskPath = Dir + "SP_UpperBody.mask";
 
-        // 클립 고유 이동 속도(m/s). 제자리 클립의 디딤발이 뒤로 미끄러지는 속도를 표본 추출해 잰 값(플레이어 체형 기준).
-        // 경비 체형은 약 0.93배.
-        public const float PlayerWalkNatural = 1.0f, PlayerRunNatural = 3.2f, PlayerCrouchWalkNatural = 1.0f;
-        public const float GuardWalkNatural = 0.93f, GuardRunNatural = 3.0f;
-        /// <summary>던지기: 와인드업 앞부분을 건너뛰고(정규화 시작) 빠르게 재생. 손이 앞으로 나가는 순간(원본 2.2s)</summary>
+        public const string Player = "female_agent", Heavy = "heavyguard_v2", Captain = "supervisor_v2";
+        public static string ModelPath(string who) => ModelDir + who + "_final.fbx";
+
+        // 클립 고유 이동 속도(m/s): Blender에서 접지 구간의 발 이동으로 잰 값(BLENDER_PROGRESS D). 블렌드 임계값 = 이 속도라 발이 미끄러지지 않는다.
+        public const float PlayerWalkNatural = 0.89f, PlayerRunNatural = 3.80f;
+        // 웅크려 걷기 측정값(1.75)은 발을 끄는 동작이라 신뢰가 낮아 기존 값(1.0)을 유지
+        public const float PlayerCrouchWalkNatural = 1.0f;
+        public const float HeavyWalkNatural = 0.87f, HeavyRunNatural = 4.07f;
+        public const float CaptainWalkNatural = 0.76f, CaptainRunNatural = 3.56f;
+        public const float GuardWalkNatural = HeavyWalkNatural, GuardRunNatural = HeavyRunNatural;
+        /// <summary>던지기: 와인드업 앞부분을 건너뛰고(정규화 시작) 빠르게 재생.</summary>
         public const float ThrowStartNormalized = 0.38f, ThrowSpeed = 1.5f;
+
+        public static float RunNatural(string who) => who == Player ? PlayerRunNatural : who == Captain ? CaptainRunNatural : HeavyRunNatural;
+        public static float WalkNatural(string who) => who == Player ? PlayerWalkNatural : who == Captain ? CaptainWalkNatural : HeavyWalkNatural;
+        public static string ControllerPath(string who) => who == Player ? PlayerControllerPath : who == Captain ? CaptainControllerPath : GuardControllerPath;
 
         struct ClipDef
         {
-            public string file, name; public bool loop; public int first, last; public float rotOffset;
-            public ClipDef(string f, string n, bool l, int a, int b, float r) { file = f; name = n; loop = l; first = a; last = b; rotOffset = r; }
+            public string who, name; public bool loop; public int first, last; public float rotOffset;
+            public ClipDef(string w, string n, bool l) { who = w; name = n; loop = l; first = -1; last = -1; rotOffset = 0f; }
+            public string File => SourceDir + who + "@" + name + ".fbx";
         }
 
-        // first/last: 한 걸음 주기(왼발이 가장 앞에 닿는 프레임부터 다음 같은 순간까지)만 잘라 블렌드 시 발 위상이 맞게 한다.
-        // rotOffset: 클립마다 몸이 바라보는 방향이 달라(달리기는 +X) 정면(+Z)으로 맞춘다.
+        // (first, last, rotOffset) = (-1, -1, 0): 구간·방향이 클립에 이미 구워져 있다(다시 적용하면 이중 적용)
         static readonly ClipDef[] Defs =
         {
-            new ClipDef("anim_idle_looping", "Idle", true, -1, -1, 0f),
-            new ClipDef("anim_walk_looping", "Walk", true, 31, 65, 0f),
-            new ClipDef("anim_run", "Run", true, 7, 46, 88f),
-            new ClipDef("anim_crouch_walk_looping", "CrouchWalk", true, 100, 139, 0f),
-            new ClipDef("anim_crouch_idle_looping", "CrouchIdle", true, -1, -1, 17f),
-            new ClipDef("anim_walk_look_around", "LookAround", true, -1, -1, 25f),
-            new ClipDef("anim_throw", "Throw", false, -1, -1, 0f),
-            new ClipDef("anim_hit_fall", "HitFall", false, -1, -1, 58f),
-            new ClipDef("anim_talk_looping", "Talk", true, -1, -1, 0f),
+            new ClipDef(Player, "Idle", true), new ClipDef(Player, "Walk", true), new ClipDef(Player, "Run", true),
+            new ClipDef(Player, "CrouchIdle", true), new ClipDef(Player, "CrouchWalk", true), new ClipDef(Player, "Throw", false),
+            new ClipDef(Heavy, "Idle", true), new ClipDef(Heavy, "Walk", true), new ClipDef(Heavy, "Run", true),
+            new ClipDef(Heavy, "LookAround", true), new ClipDef(Heavy, "HitFall", false), new ClipDef(Heavy, "Talk", true),
+            new ClipDef(Captain, "Idle", true), new ClipDef(Captain, "Walk", true), new ClipDef(Captain, "Run", true),
+            new ClipDef(Captain, "LookAround", true), new ClipDef(Captain, "HitFall", false), new ClipDef(Captain, "Talk", true),
         };
 
         [MenuItem("ShadowProtocol/Setup Animations")]
@@ -49,13 +60,15 @@ namespace ShadowProtocol.EditorTools
         {
             ConfigureImporters();
             BuildControllers();
-            Debug.Log("[ShadowProtocol] 애니메이션 설정 완료: " + PlayerControllerPath + ", " + GuardControllerPath);
+            Debug.Log("[ShadowProtocol] 애니메이션 설정 완료: " + PlayerControllerPath + ", " + GuardControllerPath + ", " + CaptainControllerPath);
         }
 
         public static bool SourcesPresent()
         {
             foreach (var d in Defs)
-                if (AssetImporter.GetAtPath(SourceDir + d.file + ".fbx") == null) return false;
+                if (AssetImporter.GetAtPath(d.File) == null) return false;
+            foreach (var w in new[] { Player, Heavy, Captain })
+                if (AssetImporter.GetAtPath(ModelPath(w)) == null) return false;
             return true;
         }
 
@@ -63,12 +76,25 @@ namespace ShadowProtocol.EditorTools
         {
             foreach (var d in Defs)
             {
-                string p = SourceDir + d.file + ".fbx";
+                string p = d.File;
                 var imp = AssetImporter.GetAtPath(p) as ModelImporter;
                 if (imp == null) { Debug.LogWarning("[ShadowProtocol] 애니메이션 없음: " + p); continue; }
                 bool dirty = false;
                 if (imp.animationType != ModelImporterAnimationType.Human) { imp.animationType = ModelImporterAnimationType.Human; dirty = true; }
-                if (imp.avatarSetup != ModelImporterAvatarSetup.CreateFromThisModel) { imp.avatarSetup = ModelImporterAvatarSetup.CreateFromThisModel; dirty = true; }
+                // 아바타는 클립 파일의 아마추어(23뼈, T포즈)에서 만든다. 모델 아바타 복사는 계층(메시 자식·루트 이름)이 달라 Unity가 거부한다.
+                if (imp.avatarSetup != ModelImporterAvatarSetup.CreateFromThisModel) { imp.avatarSetup = ModelImporterAvatarSetup.CreateFromThisModel; imp.sourceAvatar = null; dirty = true; }
+                // 뼈 대응은 인물 모델과 같게(자동 매핑이 중무장 경비병 클립에서 Hips를 Root에 잘못 붙였다)
+                var modelImp = AssetImporter.GetAtPath(ModelPath(d.who)) as ModelImporter;
+                if (modelImp != null)
+                {
+                    var want = modelImp.humanDescription.human;
+                    var hd = imp.humanDescription;
+                    bool same = hd.human != null && hd.human.Length == want.Length;
+                    if (same)
+                        for (int i = 0; i < want.Length; i++)
+                            if (hd.human[i].humanName != want[i].humanName || hd.human[i].boneName != want[i].boneName) { same = false; break; }
+                    if (!same) { hd.human = want; imp.humanDescription = hd; dirty = true; }
+                }
                 if (imp.materialImportMode != ModelImporterMaterialImportMode.None) { imp.materialImportMode = ModelImporterMaterialImportMode.None; dirty = true; }
                 if (imp.importCameras || imp.importLights || imp.importBlendShapes) { imp.importCameras = false; imp.importLights = false; imp.importBlendShapes = false; dirty = true; }
                 if (dirty) { imp.SaveAndReimport(); imp = (ModelImporter)AssetImporter.GetAtPath(p); }
@@ -79,18 +105,18 @@ namespace ShadowProtocol.EditorTools
                 var cur = imp.clipAnimations;
                 if (cur != null && cur.Length == 1 && cur[0].name == d.name && cur[0].loopTime == d.loop &&
                     Mathf.Approximately(cur[0].rotationOffset, d.rotOffset) &&
-                    (d.first < 0 || (Mathf.Approximately(cur[0].firstFrame, d.first) && Mathf.Approximately(cur[0].lastFrame, d.last))) &&
+                    Mathf.Approximately(cur[0].firstFrame, c.firstFrame) && Mathf.Approximately(cur[0].lastFrame, c.lastFrame) &&
                     cur[0].lockRootPositionXZ && cur[0].lockRootHeightY && cur[0].lockRootRotation)
                     continue;
 
                 c.name = d.name;
                 c.loopTime = d.loop;
-                c.loopPose = d.loop;
-                if (d.first >= 0) { c.firstFrame = d.first; c.lastFrame = d.last; }
+                c.loopPose = false; // 루프 이음매는 Blender에서 마지막 = 첫 프레임으로 맞춤
+                // first/last는 파일 전체(기본값), rotOffset 0
+                c.rotationOffset = d.rotOffset;
                 // 루트 모션은 쓰지 않는다(In Place): 회전·높이·수평 이동을 모두 포즈에 굽는다.
                 c.lockRootRotation = true;
                 c.keepOriginalOrientation = true;
-                c.rotationOffset = d.rotOffset;
                 c.lockRootHeightY = true;
                 c.keepOriginalPositionY = true;
                 c.heightFromFeet = false;
@@ -101,12 +127,12 @@ namespace ShadowProtocol.EditorTools
             }
         }
 
-        public static AnimationClip Clip(string name)
+        public static AnimationClip Clip(string who, string name)
         {
             foreach (var d in Defs)
             {
-                if (d.name != name) continue;
-                foreach (var o in AssetDatabase.LoadAllAssetsAtPath(SourceDir + d.file + ".fbx"))
+                if (d.name != name || d.who != who) continue;
+                foreach (var o in AssetDatabase.LoadAllAssetsAtPath(d.File))
                     if (o is AnimationClip ac && !ac.name.StartsWith("__preview")) return ac;
             }
             return null;
@@ -136,7 +162,8 @@ namespace ShadowProtocol.EditorTools
         {
             var mask = UpperMask();
             BuildPlayer(mask);
-            BuildGuard(mask);
+            BuildGuard(mask, Heavy, GuardControllerPath, HeavyWalkNatural, HeavyRunNatural);
+            BuildGuard(mask, Captain, CaptainControllerPath, CaptainWalkNatural, CaptainRunNatural);
             AssetDatabase.SaveAssets();
         }
 
@@ -163,16 +190,16 @@ namespace ShadowProtocol.EditorTools
             stand.blendType = BlendTreeType.Simple1D;
             stand.blendParameter = "Speed";
             stand.useAutomaticThresholds = false;
-            stand.AddChild(Clip("Idle"), 0f);
-            stand.AddChild(Clip("Walk"), PlayerWalkNatural);
-            stand.AddChild(Clip("Run"), PlayerRunNatural);
+            stand.AddChild(Clip(Player, "Idle"), 0f);
+            stand.AddChild(Clip(Player, "Walk"), PlayerWalkNatural);
+            stand.AddChild(Clip(Player, "Run"), PlayerRunNatural);
             var crouch = root.CreateBlendTreeChild(1f);
             crouch.name = "Crouch";
             crouch.blendType = BlendTreeType.Simple1D;
             crouch.blendParameter = "Speed";
             crouch.useAutomaticThresholds = false;
-            crouch.AddChild(Clip("CrouchIdle"), 0f);
-            crouch.AddChild(Clip("CrouchWalk"), PlayerCrouchWalkNatural);
+            crouch.AddChild(Clip(Player, "CrouchIdle"), 0f);
+            crouch.AddChild(Clip(Player, "CrouchWalk"), PlayerCrouchWalkNatural);
             state.speedParameterActive = true;
             state.speedParameter = "MoveScale";
 
@@ -187,7 +214,7 @@ namespace ShadowProtocol.EditorTools
             var empty = sm.AddState("Empty");
             empty.writeDefaultValues = false;
             var thr = sm.AddState("Throw");
-            thr.motion = Clip("Throw");
+            thr.motion = Clip(Player, "Throw");
             thr.speed = ThrowSpeed;
             sm.defaultState = empty;
             var t1 = empty.AddTransition(thr);
@@ -208,9 +235,9 @@ namespace ShadowProtocol.EditorTools
             EditorUtility.SetDirty(ctrl);
         }
 
-        static void BuildGuard(AvatarMask mask)
+        static void BuildGuard(AvatarMask mask, string who, string path, float walk, float run)
         {
-            var ctrl = NewController(GuardControllerPath);
+            var ctrl = NewController(path);
             ctrl.AddParameter("Speed", AnimatorControllerParameterType.Float);
             ctrl.AddParameter(new AnimatorControllerParameter { name = "MoveScale", type = AnimatorControllerParameterType.Float, defaultFloat = 1f });
             ctrl.AddParameter("Searching", AnimatorControllerParameterType.Bool);
@@ -221,9 +248,9 @@ namespace ShadowProtocol.EditorTools
             lt.blendType = BlendTreeType.Simple1D;
             lt.blendParameter = "Speed";
             lt.useAutomaticThresholds = false;
-            lt.AddChild(Clip("Idle"), 0f);
-            lt.AddChild(Clip("Walk"), GuardWalkNatural);
-            lt.AddChild(Clip("Run"), GuardRunNatural);
+            lt.AddChild(Clip(who, "Idle"), 0f);
+            lt.AddChild(Clip(who, "Walk"), walk);
+            lt.AddChild(Clip(who, "Run"), run);
             loco.speedParameterActive = true;
             loco.speedParameter = "MoveScale";
 
@@ -232,14 +259,14 @@ namespace ShadowProtocol.EditorTools
             st.blendType = BlendTreeType.Simple1D;
             st.blendParameter = "Speed";
             st.useAutomaticThresholds = false;
-            st.AddChild(Clip("LookAround"), 0f);
-            st.AddChild(Clip("Walk"), GuardWalkNatural);
-            st.AddChild(Clip("Run"), GuardRunNatural);
+            st.AddChild(Clip(who, "LookAround"), 0f);
+            st.AddChild(Clip(who, "Walk"), walk);
+            st.AddChild(Clip(who, "Run"), run);
             search.speedParameterActive = true;
             search.speedParameter = "MoveScale";
 
             var fall = sm.AddState("HitFall");
-            fall.motion = Clip("HitFall");
+            fall.motion = Clip(who, "HitFall");
             sm.defaultState = loco;
 
             var a = loco.AddTransition(search);
@@ -264,7 +291,7 @@ namespace ShadowProtocol.EditorTools
             ctrl.layers = layers;
             var rsm = ctrl.layers[1].stateMachine;
             var talk = rsm.AddState("Talk");
-            talk.motion = Clip("Talk");
+            talk.motion = Clip(who, "Talk");
             rsm.defaultState = talk;
             EditorUtility.SetDirty(ctrl);
         }
