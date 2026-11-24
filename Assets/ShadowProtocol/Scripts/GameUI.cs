@@ -18,6 +18,7 @@ namespace ShadowProtocol
 
         public PlayerController player;
         public PlayerTools tools;
+        ParkourController parkour;
         [Header("지도 범위(월드 XZ)")]
         public Vector2 mapMin = new Vector2(-41.5f, -21.5f);
         public Vector2 mapMax = new Vector2(16.5f, 22.5f);
@@ -193,7 +194,8 @@ namespace ShadowProtocol
                 throwText.text = n > 0
                     ? $"던질 물건 <b>{n}/{tools.maxThrowables}</b> ({kind})   <color=#9FC>우클릭 조준 · 좌클릭 던지기 · G</color>"
                     : $"던질 물건 <b>0/{tools.maxThrowables}</b>   <color=#889>바닥의 병·캔을 주울 수 있다</color>";
-                promptText.text = tools.Prompt ?? "";
+                if (parkour == null) parkour = tools.GetComponent<ParkourController>();
+                promptText.text = tools.Prompt ?? (parkour != null ? parkour.Prompt : null) ?? "";
             }
 
             string banner = gm.Banner;
@@ -684,12 +686,12 @@ namespace ShadowProtocol
                 "1. 북동쪽 서버실의 <b>데이터 코어</b>를 확보한다.\n" +
                 "2. 야드 남서쪽 <b>시작 지점</b>(녹색 표시)으로 돌아가 탈출한다.\n\n" +
                 "<b><color=#FFD24D>정보</color></b>\n" +
-                "· 경비 6명. 시야(바닥 부채꼴)와 소리로 감지한다. 어두운 곳에서는 덜 보인다.\n" +
+                "· 경비 6명. 눈(시야)과 소리로 감지한다. 시야는 화면에 표시되지 않으니 경비가 보는 방향을 살핀다. 어두운 곳에서는 덜 보인다.\n" +
                 "· <b>적응형 경비 AI</b>: 자주 쓰는 경로·엄폐물을 기억해 다음 시도와 경보 후 배치를 바꾼다.\n" +
                 "  환기구·하역문(정면)·사무동 출입문·캣워크·덕트 중 최소 3곳은 항상 열려 있다.\n" +
                 "· 구역(홀·사무동·서버실)에 들어가면 자동 저장. 실패하면 마지막 체크포인트에서 다시.\n\n" +
                 "<b><color=#59D9FF>조작</color></b>\n" +
-                "WASD 이동 · 마우스 시점 · 휠 거리 · Shift 달리기 · Ctrl/C 웅크리기\n" +
+                "WASD 이동 · 마우스 시점 · 휠 거리 · Shift 달리기 · Ctrl/C 웅크리기 · Space 뛰어넘기(낮은 장애물)/슬라이딩(달리는 중)\n" +
                 "우클릭 조준 + 좌클릭 던지기 · G 빠른 던지기 · E 등 뒤 제압 · F 기절체 끌기\n" +
                 "Tab/V 전술 시점 · P/Esc 일시정지 · R 체크포인트 재시작",
                 23, Color.white, TextAnchor.UpperLeft, tl, tl, new Vector2(50f, -120f), new Vector2(860f, 680f));
@@ -974,8 +976,8 @@ namespace ShadowProtocol
 
         /// <summary>사실과 맞는 제작 표기(레벨 구조는 Unity 기본 도형, 사운드는 코드 합성)</summary>
         public const string CreditLine =
-            "All 3D models, characters and animations: VARCO 3D + Blender\n" +
-            "캐릭터·소품 모델: VARCO 3D → Blender  ·  애니메이션: VARCO Animate  ·  환경(벽·바닥·펜스 등)·게임 장치·UI 표시물: Unity 기본 도형(환경 VARCO 모듈은 Blender 마무리 중)  ·  사운드: 코드 합성";
+            "3D models and animations: VARCO 3D + Blender (player crouch idle & walk: Adobe Mixamo source, refined in Blender)\n" +
+            "캐릭터·소품·환경 모델: VARCO 3D → Blender  ·  애니메이션: VARCO Animate → Blender  ·  플레이어 웅크린 대기·걷기 애니메이션: Adobe Mixamo 원본 → Blender 보정  ·  게임 장치·UI 표시물: Unity 기본 도형  ·  사운드: 코드 합성";
 
         GameObject makingOfScreen, creditsScreen;
         bool galleryOpen, creditsOpen;
@@ -1088,14 +1090,16 @@ namespace ShadowProtocol
             Label(f, "크레딧", 48, Accent, TextAnchor.MiddleCenter, top, top, new Vector2(0f, -50f), new Vector2(1200f, 70f), FontStyle.Bold);
             Label(f,
                 "<b>SHADOW PROTOCOL</b>  —  적응형 AI 잠입 작전\n\n" +
-                "<b><color=#59D9FF>All 3D models, characters and animations: VARCO 3D + Blender</color></b>\n" +
-                "· 플레이어·경비병 3종 캐릭터: VARCO 3D 생성 → Blender 정리·리깅\n" +
-                "· 소품 17종(컨테이너·지게차·서버·사물함·선반·상자·데이터 코어 등): VARCO 3D 생성 → Blender 정리\n" +
-                "· 캐릭터 애니메이션 9종: VARCO Animate\n\n" +
+                "<b><color=#59D9FF>3D models and animations: VARCO 3D + Blender</color></b>\n" +
+                "· 플레이어(여성 잠입 요원)·중무장 경비병·경비 반장: VARCO 3D 생성 → Blender 다듬기·리깅\n" +
+                "· 소품(컨테이너·지게차·서버·사물함·선반·상자·데이터 코어 등): VARCO 3D 생성 → Blender 정리(컨테이너는 Blender에서 새로 모델링)\n" +
+                "· 환경(벽·바닥·아스팔트·펜스·캣워크·가로등·트러스·안전선): VARCO 3D 참조·팔레트 → Blender 최종본\n" +
+                "· 캐릭터 애니메이션: VARCO Animate → Blender 리타깃·정리\n" +
+                "· 플레이어 웅크린 대기·걷기 애니메이션: Adobe Mixamo 원본 → Blender 보정\n\n" +
                 "<b>그 밖의 제작 방식(정확한 표기)</b>\n" +
-                "· 환경(벽·바닥·펜스·캣워크·가로등·트러스): 현재 Unity 기본 도형 + 코드 생성 텍스처 — VARCO 3D 모듈을 Blender에서 마무리하는 중(벽 모듈은 제작 대기)\n" +
+                "· 레벨 충돌 구조: Unity 기본 도형(겉모습은 위 환경 모델)\n" +
                 "· 보안문·키패드·배전반·환풍기 등 퍼즐 장치, 던지는 병·캔, 레이저 빔: Unity 기본 도형\n" +
-                "· 시야 원뿔·소음 고리·상태 표시 등 UI 표시물: Unity 기본 도형·라인 렌더러\n" +
+                "· 소음 고리·상태 표시 등 UI 표시물: Unity 기본 도형·라인 렌더러\n" +
                 "· 사운드·음악: 코드로 합성(절차적 생성, 외부 음원 없음)\n" +
                 "· UI: Unity uGUI(코드 생성), 글꼴: 운영체제 맑은 고딕\n" +
                 "· 게임 로직·적응형 경비 AI: Unity C#\n\n" +

@@ -34,6 +34,14 @@ namespace ShadowProtocol
             if (guard == null) return;
             if (cam == null) cam = Camera.main;
 
+            if (guard.IsKnockedOut && !guard.ShowDown)
+            {
+                // 암살 연출: 타격 순간까지는 표시를 숨긴다
+                if (label != null) label.text = "";
+                if (orb != null) orb.enabled = false;
+                if (bar != null) bar.gameObject.SetActive(false);
+                return;
+            }
             if (guard.IsKnockedOut)
             {
                 // 기절: 회색 구슬 + Zz
@@ -49,7 +57,7 @@ namespace ShadowProtocol
                     if (cam != null) label.transform.rotation = cam.transform.rotation;
                 }
                 if (orb != null) orb.enabled = false;
-                if (orbMat != null) { orbMat.color = ko; if (orbMat.HasProperty("_EmissionColor")) orbMat.SetColor("_EmissionColor", ko * 0.3f); }
+                if (orbMat != null) { SPRender.SetColor(orbMat, ko); SPRender.SetEmission(orbMat, ko * 0.3f); }
                 if (bar != null) bar.gameObject.SetActive(false);
                 return;
             }
@@ -78,8 +86,8 @@ namespace ShadowProtocol
 
             if (orbMat != null)
             {
-                orbMat.color = c;
-                if (orbMat.HasProperty("_EmissionColor")) orbMat.SetColor("_EmissionColor", c * 1.5f);
+                SPRender.SetColor(orbMat, c);
+                SPRender.SetEmission(orbMat, c * 1.5f);
             }
 
             if (bar != null)
@@ -91,8 +99,8 @@ namespace ShadowProtocol
                 bar.gameObject.SetActive(guard.Suspicion > 0.01f && s != GuardState.Alert);
                 if (barMat != null)
                 {
-                    barMat.color = c;
-                    if (barMat.HasProperty("_EmissionColor")) barMat.SetColor("_EmissionColor", c);
+                    SPRender.SetColor(barMat, c);
+                    SPRender.SetEmission(barMat, c);
                 }
             }
         }

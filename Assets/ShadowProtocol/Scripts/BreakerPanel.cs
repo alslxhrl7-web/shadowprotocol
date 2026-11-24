@@ -110,8 +110,8 @@ namespace ShadowProtocol
             var mpb = new MaterialPropertyBlock();
             Color c = Solved ? new Color(0.3f, 1f, 0.45f) : new Color(1f, 0.6f, 0.1f);
             lamp.GetPropertyBlock(mpb);
-            mpb.SetColor("_Color", c);
-            mpb.SetColor("_EmissionColor", c * 2f);
+            SPRender.SetColor(mpb, lamp.sharedMaterial, c);
+            SPRender.SetEmission(mpb, lamp.sharedMaterial, c * 2f);
             lamp.SetPropertyBlock(mpb);
         }
     }

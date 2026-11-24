@@ -73,6 +73,7 @@ namespace ShadowProtocol
             if (pose == null) pose = GetComponentInChildren<CharacterProceduralPose>();
             var a = GetComponentInChildren<Animator>();
             if (a != null && a.isHuman) hand = a.GetBoneTransform(HumanBodyBones.RightHand);
+            if (hand == null) foreach (var t in GetComponentsInChildren<Transform>()) if (t.name == "RightHand") { hand = t; break; } // Generic 플레이어
             ShowArc(false);
         }
 
@@ -333,15 +334,70 @@ namespace ShadowProtocol
             Vector3 f = g.transform.position - transform.position;
             f.y = 0f;
             if (f.sqrMagnitude > 0.001f) transform.rotation = Quaternion.LookRotation(f.normalized, Vector3.up);
-            if (pose != null) pose.PlayStrike();
+            // 판정(기절)은 바로, 쓰러지는 모습은 돌진 후 내려치는 순간에 맞춘다
+            g.FallDelay = TakedownDashTime + 0.06f;
             g.KnockOut();
-            var am = AudioManager.Instance;
-            if (am != null) am.PlayAt(am.knockout, g.transform.position + Vector3.up, 1f, 1.5f, 14f);
+            StartCoroutine(TakedownRoutine(g));
             NoiseSystem.Emit(g.transform.position, takedownNoise, g.gameObject);
             if (GameManager.Instance != null) GameManager.Instance.RegisterKnockout();
             Debug.Log($"[ShadowProtocol] 제압: {g.name} ({g.transform.position.x:0.0}, {g.transform.position.z:0.0})");
             TakedownTarget = null;
             return true;
+        }
+
+        const float TakedownDashTime = 0.2f;
+        public bool InTakedown { get; private set; }
+
+        /// <summary>
+        /// 암살 연출(어쌔신 크리드 참고): 슬로모션·측면 클로즈업 속에서 경비 등 뒤로 짧게 돌진 →
+        /// 내려치는 순간 타격음·화면 흔들림, 경비가 쓰러진다. 그동안 조작은 잠근다.
+        /// </summary>
+        System.Collections.IEnumerator TakedownRoutine(GuardAI g)
+        {
+            InTakedown = true;
+            bool prevInput = player.InputEnabled;
+            player.InputEnabled = false;
+            ActionDirector.Instance.Takedown(player, g);
+            // AC3식: 돌진하며 왼손으로 입·어깨를 덮어 잡고, 붙는 순간 오른손으로 목덜미를 찌른다(손 IK)
+            if (pose != null) { pose.assassinReach = TakedownDashTime; pose.PlayAssassinate(g); }
+
+            var cc = player.GetComponent<CharacterController>();
+            Vector3 start = transform.position;
+            Vector3 gb = g.transform.position - g.transform.forward * 0.42f; // 경비 등 바로 뒤(손이 입·목에 닿는 거리)
+            gb.y = start.y;
+            float t = 0f;
+            while (t < TakedownDashTime && g != null)
+            {
+                t += Time.deltaTime;
+                float k = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t / TakedownDashTime));
+                Vector3 target = Vector3.Lerp(start, gb, k);
+                Vector3 step = target - transform.position; step.y = 0f;
+                if (cc != null && cc.enabled) cc.Move(step); else transform.position += step;
+                Vector3 look = g.transform.position - transform.position; look.y = 0f;
+                if (look.sqrMagnitude > 0.001f) transform.rotation = Quaternion.LookRotation(look.normalized, Vector3.up);
+                yield return null;
+            }
+
+            var am = AudioManager.Instance;
+            if (am != null && g != null) am.PlayAt(am.knockout, g.transform.position + Vector3.up, 1f, 1.5f, 14f);
+            ActionDirector.Instance.Impact(1f);
+
+            yield return new WaitForSeconds(0.22f);
+            // 쓰러지는 몸에 겹치지 않게 반 걸음 물러난다
+            Vector3 away = g != null ? transform.position - g.transform.position : -transform.forward;
+            away.y = 0f;
+            away = away.sqrMagnitude > 0.001f ? away.normalized : -transform.forward;
+            float bt = 0f;
+            while (bt < 0.25f)
+            {
+                bt += Time.deltaTime;
+                Vector3 step = away * (1.6f * Time.deltaTime);
+                if (cc != null && cc.enabled) cc.Move(step); else transform.position += step;
+                yield return null;
+            }
+            player.ResetMotion();
+            if (GameManager.GameplayActive) player.InputEnabled = prevInput; // 그사이 게임이 끝났으면 잠금 유지
+            InTakedown = false;
         }
 
         // ---------------- 끌기 ----------------

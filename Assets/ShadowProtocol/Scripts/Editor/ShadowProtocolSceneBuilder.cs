@@ -74,7 +74,7 @@ namespace ShadowProtocol.EditorTools
             var mGuardVisor = Mat("GuardVisor", new Color(1f, 0.85f, 0.3f), 1.5f);
             var mOrb = Mat("StatusOrb", new Color(0.35f, 0.95f, 0.45f), 1.5f);
             var mGoal = Mat("Goal", new Color(0.2f, 1f, 0.55f), 3f);
-            var mStart = Mat("StartPad", new Color(0.2f, 0.6f, 1f), 0.8f);
+            var mStart = Mat("StartPad", new Color(0.06f, 0.16f, 0.30f), 0.8f); // HDRP: 바닥 도색처럼 어두운 파랑(밝은 판이 밤 화면에서 튀었음)
             var mCone = UnlitTransparentMat("VisionCone");
             var mRing = UnlitTransparentMat("NoiseRing");
             var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
@@ -242,6 +242,9 @@ namespace ShadowProtocol.EditorTools
             // ---------- 사운드·UI·도구·적응형 지휘·체크포인트·튜토리얼·성능 ----------
             BuildSystems(pc, tpc, gm, mRing);
 
+            // ---------- HDRP: 재질·조명(물리 단위)·밤 볼륨·카메라 ----------
+            ShadowProtocolHDRP.ApplyToScene();
+
             // ---------- Save + Bake ----------
             EditorSceneManager.SaveScene(scene, ScenePath);
 
@@ -328,6 +331,8 @@ namespace ShadowProtocol.EditorTools
             agent.enabled = false;
 
             var ai = g.AddComponent<GuardAI>();
+            // 사람다운 이동(몸이 향한 쪽으로 걷고, 크게 꺾을 땐 먼저 돌아섬, 가속·감속). 에이전트는 경로만 계산.
+            g.AddComponent<GuardLocomotion>();
             ai.player = ctx.player;
             ai.patrolPoints = tps.ToArray();
 
@@ -370,6 +375,9 @@ namespace ShadowProtocol.EditorTools
             cmr.receiveShadows = false;
             var vc = coneGO.AddComponent<VisionCone>();
             vc.guard = ai;
+            // 2026-11-23 사용자 지시: 바닥 시야 부채꼴 표시를 숨긴다(사실적인 화면). 표시 전용이라 감지 판정(GuardAI)은 그대로.
+            // 다시 보이게 하려면 이 줄을 지우고 Build Demo Scene.
+            coneGO.SetActive(false);
 
             var ind = g.AddComponent<GuardStatusIndicator>();
             ind.guard = ai;
@@ -1018,13 +1026,9 @@ namespace ShadowProtocol.EditorTools
 
         static Shader LitShader()
         {
-            Shader s = null;
-            if (GraphicsSettings.currentRenderPipeline != null)
-            {
-                s = Shader.Find("Universal Render Pipeline/Lit");
-                if (s == null) s = Shader.Find("HDRP/Lit");
-            }
-            if (s == null) s = Shader.Find("Standard");
+            // 빌더는 Standard 값(_Color·_MainTex·_EmissionColor)으로 재질을 만들고,
+            // Build() 끝의 ShadowProtocolHDRP.ApplyToScene()이 HDRP/Lit로 한꺼번에 바꾼다(마스크 맵·nits 포함).
+            Shader s = Shader.Find("Standard");
             if (s == null) s = Shader.Find("Diffuse");
             return s;
         }

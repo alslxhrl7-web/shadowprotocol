@@ -37,7 +37,7 @@ namespace ShadowProtocol
             cooldown -= dt;
             if (cooldown > 0f) return;
 
-            if (playTime > 1f && Try("move", "<b>이동</b>  WASD 이동 · 마우스로 시점 · 휠 카메라 거리\nShift 달리기(빠르지만 발소리가 크다)  ·  P/Esc 일시정지")) return;
+            if (playTime > 1f && Try("move", "<b>이동</b>  WASD 이동 · 마우스로 시점 · 휠 카메라 거리\nShift 달리기(빠르지만 발소리가 크다)  ·  Space 뛰어넘기/슬라이딩  ·  P/Esc 일시정지")) return;
 
             GuardAI nearest = null;
             float nd = float.MaxValue;
@@ -62,7 +62,7 @@ namespace ShadowProtocol
                 }
                 if (visible)
                 {
-                    if (Try("icons", "<b>경비 표시</b>  머리 위 구슬 <color=#59F273>초록=순찰</color> · <color=#FFD933>? 의심</color> · <color=#FF8C26>?? 수색</color> · <color=#FF3333>! 경보</color>\n바닥의 부채꼴이 시야. 화면 밖에서 경계 중인 경비는 가장자리에 방향이 표시된다.")) return;
+                    if (Try("icons", "<b>경비 표시</b>  머리 위 구슬 <color=#59F273>초록=순찰</color> · <color=#FFD933>? 의심</color> · <color=#FF8C26>?? 수색</color> · <color=#FF3333>! 경보</color>\n시야는 표시되지 않는다 — 경비의 얼굴 방향을 보고 피할 것. 화면 밖에서 경계 중인 경비는 가장자리에 방향이 표시된다.")) return;
                 }
             }
 

@@ -188,6 +188,10 @@ namespace ShadowProtocol
             pitch = Mathf.Clamp(pitch, minPitch, maxPitch);
 
             bool aiming = tools != null && tools.Aiming;
+            float udt = Time.unscaledDeltaTime > 0f ? Mathf.Min(Time.unscaledDeltaTime, 0.1f) : dt;
+            crouchBlend = Mathf.Lerp(crouchBlend, player.IsCrouching ? 1f : 0f, 1f - Mathf.Exp(-5f * dt));
+            runBlend = Mathf.Lerp(runBlend, player.IsRunning ? 1f : 0f, 1f - Mathf.Exp(-3f * dt));
+            UpdateFocus(udt);
             float wantPivot = player.IsCrouching ? crouchPivotHeight : standPivotHeight;
             pivotHeight = Mathf.Lerp(pivotHeight, wantPivot, 1f - Mathf.Exp(-8f * dt));
             smoothPivot = Vector3.Lerp(smoothPivot, Pivot(), 1f - Mathf.Exp(-followSharpness * dt));
@@ -196,12 +200,14 @@ namespace ShadowProtocol
 
             // 1) 피벗 → 어깨 지점(옆벽에 붙었을 때 어깨 오프셋이 벽을 뚫지 않게)
             Vector3 right = rot * Vector3.right;
-            Vector3 side = rot * (aiming ? aimShoulderOffset : shoulderOffset);
+            Vector3 side = rot * (aiming ? aimShoulderOffset : Vector3.Lerp(shoulderOffset, crouchShoulderOffset, crouchBlend));
             Vector3 shoulder = ClipOffset(smoothPivot, side);
 
             // 2) 어깨 → 뒤쪽. 0.8m보다 가까워지면 0으로 당기는 대신 카메라를 들어 올린다.
             Vector3 back = rot * Vector3.back;
-            float want = aiming ? Mathf.Min(aimDistance, targetDist) : targetDist;
+            // 어쌔신 크리드식 구도: 웅크리면 가깝고 낮게(긴장감), 달리면 살짝 멀리(속도감)
+            float stanceMul = Mathf.Lerp(1f, crouchDistanceScale, crouchBlend) * Mathf.Lerp(1f, runDistanceScale, runBlend);
+            float want = aiming ? Mathf.Min(aimDistance, targetDist) : Mathf.Max(minDistance, targetDist * stanceMul);
             float allowed = CastDistance(shoulder, back, want);
             float wantRaise = 0f, wantSide = 0f;
             bool fallback = false;
@@ -276,9 +282,12 @@ namespace ShadowProtocol
                 if (look.sqrMagnitude > 0.01f)
                     finalRot = Quaternion.Slerp(rot, Quaternion.LookRotation(look, Vector3.up), Mathf.Clamp01(raise / maxRaise));
             }
+            if (handheld) ApplyHandheld(dt, aiming, ref pos, ref finalRot);
+            ApplyShake(udt, ref finalRot);
+            ApplyShot(udt, ref pos, ref finalRot);
             transform.SetPositionAndRotation(pos, finalRot);
 
-            float fov = GameSettings.Fov + (player.IsRunning ? runFovBoost : 0f) - (aiming ? 6f : 0f);
+            float fov =GameSettings.Fov + (player.IsRunning ? runFovBoost : 0f) - (aiming ? 6f : 0f);
             cam.fieldOfView = Mathf.Lerp(cam.fieldOfView, fov, 1f - Mathf.Exp(-6f * dt));
 
             UpdateFades(smoothPivot, pos);
@@ -286,6 +295,109 @@ namespace ShadowProtocol
             float camToPivot = Vector3.Distance(pos, smoothPivot);
             if (playerFade != null && camToPivot < fadePlayerDistance) playerFade.SetTarget(Mathf.Lerp(0.25f, 1f, Mathf.InverseLerp(hidePlayerDistance, fadePlayerDistance, camToPivot)));
             ShowPlayer(camToPivot > hidePlayerDistance);
+        }
+
+        [Header("자세별 구도(어쌔신 크리드식)")]
+        [Tooltip("웅크리면 카메라 거리 배율(기본 4m → 약 2.5m)")]
+        public float crouchDistanceScale = 0.62f;
+        [Tooltip("달리면 카메라 거리 배율")]
+        public float runDistanceScale = 1.12f;
+        public Vector3 crouchShoulderOffset = new Vector3(0.6f, 0f, 0f);
+        float crouchBlend, runBlend;
+
+        // ---------------- 연출(ActionDirector가 호출) ----------------
+        Transform focusTarget;
+        float focusUntil;
+        float shake, shakeTime;
+        Vector3 shotPos, shotLook;
+        float shotUntil, shotWeight;
+
+        /// <summary>잠깐 대상 쪽으로 시선을 돌린다(들킨 순간 그 경비 쪽). 이후 조작은 그대로.</summary>
+        public void Focus(Transform target, float realSeconds)
+        {
+            focusTarget = target;
+            focusUntil = Time.unscaledTime + realSeconds;
+        }
+
+        /// <summary>충격 흔들림(1 = 강한 타격)</summary>
+        public void Shake(float amount) { shake = Mathf.Max(shake, amount); }
+
+        /// <summary>잠깐 지정한 자리에서 지정한 곳을 보는 샷(암살 측면 클로즈업)</summary>
+        public void CinematicShot(Vector3 pos, Vector3 lookAt, float realSeconds)
+        {
+            shotPos = pos;
+            shotLook = lookAt;
+            shotUntil = Time.unscaledTime + realSeconds;
+        }
+
+        void UpdateFocus(float udt)
+        {
+            if (focusTarget == null || Time.unscaledTime > focusUntil) { focusTarget = null; return; }
+            Vector3 d = focusTarget.position + Vector3.up * 1.4f - (player.transform.position + Vector3.up * pivotHeight);
+            Vector3 flat = new Vector3(d.x, 0f, d.z);
+            if (flat.sqrMagnitude < 0.01f) return;
+            float ty = Mathf.Atan2(flat.x, flat.z) * Mathf.Rad2Deg;
+            float k = 1f - Mathf.Exp(-7f * udt);
+            yaw = Mathf.LerpAngle(yaw, ty, k);
+            pitch = Mathf.Lerp(pitch, Mathf.Clamp(12f - Mathf.Atan2(d.y, flat.magnitude) * Mathf.Rad2Deg, minPitch, 30f), k * 0.6f);
+        }
+
+        void ApplyShake(float udt, ref Quaternion rot)
+        {
+            if (shake <= 0.001f) { shake = 0f; return; }
+            shakeTime += udt * 28f;
+            float a = shake * shake * 2.2f; // 도
+            float x = (Mathf.PerlinNoise(shakeTime, 1.3f) - 0.5f) * 2f * a;
+            float y = (Mathf.PerlinNoise(4.1f, shakeTime) - 0.5f) * 2f * a;
+            float z = (Mathf.PerlinNoise(shakeTime, 7.7f) - 0.5f) * 2f * a * 0.6f;
+            rot = rot * Quaternion.Euler(x, y, z);
+            shake = Mathf.MoveTowards(shake, 0f, udt * 2.2f);
+        }
+
+        void ApplyShot(float udt, ref Vector3 pos, ref Quaternion rot)
+        {
+            float want = Time.unscaledTime < shotUntil ? 1f : 0f;
+            shotWeight = Mathf.MoveTowards(shotWeight, want, udt * (want > shotWeight ? 7f : 2.5f));
+            if (shotWeight <= 0.001f) return;
+            float w = Mathf.SmoothStep(0f, 1f, shotWeight);
+            Vector3 look = shotLook - shotPos;
+            if (look.sqrMagnitude < 0.0001f) return;
+            pos = Vector3.Lerp(pos, shotPos, w);
+            rot = Quaternion.Slerp(rot, Quaternion.LookRotation(look, Vector3.up), w);
+        }
+
+        [Header("핸드헬드(사실감)")]
+        [Tooltip("걸음에 맞춘 미세한 상하·좌우 흔들림과 손에 든 카메라 같은 느린 떨림")]
+        public bool handheld = true;
+        public float swayIdleDeg = 0.15f;
+        public float swayMoveDeg = 0.3f;
+        public float bobWalk = 0.012f;
+        public float bobRun = 0.03f;
+        public float bobCrouch = 0.008f;
+        float bobPhase, swayTime, moveBlend;
+
+        void ApplyHandheld(float dt, bool aiming, ref Vector3 pos, ref Quaternion rot)
+        {
+            Vector3 v = player.PlanarVelocity;
+            float spd = v.magnitude;
+            moveBlend = Mathf.Lerp(moveBlend, Mathf.Clamp01(spd / Mathf.Max(0.1f, player.walkSpeed)), 1f - Mathf.Exp(-4f * dt));
+            // 걸음 수/초: 웅크림 1.7, 걷기 1.8 → 달리기 2.8(한 걸음마다 한 번 출렁임)
+            float runT = Mathf.InverseLerp(player.walkSpeed, player.runSpeed, spd);
+            float steps = spd < 0.1f ? 0f : (player.IsCrouching ? 1.7f : Mathf.Lerp(1.8f, 2.8f, runT));
+            bobPhase += dt * steps * Mathf.PI;
+            float amp = player.IsCrouching ? bobCrouch : Mathf.Lerp(bobWalk, bobRun, runT);
+            if (aiming) amp *= 0.4f;
+            float bob = (Mathf.Abs(Mathf.Sin(bobPhase)) - 0.5f) * 2f * amp * moveBlend;
+            float side = Mathf.Sin(bobPhase) * amp * 0.5f * moveBlend; // 왼발·오른발에 따라 좌우로
+
+            swayTime += dt;
+            float sway = Mathf.Lerp(swayIdleDeg, swayMoveDeg, moveBlend) * (player.IsRunning ? 1.6f : 1f) * (aiming ? 0.5f : 1f);
+            float nx = (Mathf.PerlinNoise(swayTime * 0.35f, 0.17f) - 0.5f) * 2f * sway;
+            float ny = (Mathf.PerlinNoise(3.7f, swayTime * 0.29f) - 0.5f) * 2f * sway;
+            float nz = (Mathf.PerlinNoise(swayTime * 0.23f, 8.1f) - 0.5f) * sway;
+
+            pos += rot * new Vector3(side, bob, 0f);
+            rot = rot * Quaternion.Euler(nx, ny, nz);
         }
 
         void Orbit(float dt)

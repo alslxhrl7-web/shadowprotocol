@@ -71,21 +71,34 @@ namespace ShadowProtocol
             cam.farClipPlane = 60f;
             cam.enabled = false;
             tcam = camGO.AddComponent<TurntableCamera>();
-            var key = new GameObject("Key").AddComponent<Light>();
-            key.transform.SetParent(root, false);
-            key.type = LightType.Point;
-            key.range = 30f;
-            key.intensity = 2.2f;
-            key.transform.localPosition = new Vector3(4f, 6f, -5f);
-            key.renderMode = LightRenderMode.ForcePixel;
-            var fill = new GameObject("Fill").AddComponent<Light>();
-            fill.transform.SetParent(root, false);
-            fill.type = LightType.Point;
-            fill.range = 30f;
-            fill.intensity = 1.1f;
-            fill.color = new Color(0.7f, 0.8f, 1f);
-            fill.transform.localPosition = new Vector3(-5f, 3f, 4f);
-            fill.renderMode = LightRenderMode.ForcePixel;
+            // HDRP: 배경은 단색(하늘 대신), 스튜디오 조명은 물리 단위(칸델라)
+            var hdCam = camGO.AddComponent<UnityEngine.Rendering.HighDefinition.HDAdditionalCameraData>();
+            hdCam.clearColorMode = UnityEngine.Rendering.HighDefinition.HDAdditionalCameraData.ClearColorMode.Color;
+            hdCam.backgroundColorHDR = cam.backgroundColor;
+            hdCam.antialiasing = UnityEngine.Rendering.HighDefinition.HDAdditionalCameraData.AntialiasingMode.TemporalAntialiasing;
+            StudioLight(root, "Key", new Vector3(4f, 6f, -5f), Color.white, 900f);
+            StudioLight(root, "Fill", new Vector3(-5f, 3f, 4f), new Color(0.7f, 0.8f, 1f), 380f);
+        }
+
+        static void StudioLight(Transform root, string name, Vector3 localPos, Color c, float candela)
+        {
+            var l = new GameObject(name).AddComponent<Light>();
+            l.transform.SetParent(root, false);
+            l.transform.localPosition = localPos;
+            l.type = LightType.Point;
+            l.range = 30f;
+            l.color = c;
+            l.lightUnit = UnityEngine.Rendering.LightUnit.Candela;
+            l.intensity = candela;
+            l.shadows = LightShadows.Soft;
+        }
+
+        void SetBackground(Color c)
+        {
+            if (cam == null) return;
+            cam.backgroundColor = c;
+            var hd = cam.GetComponent<UnityEngine.Rendering.HighDefinition.HDAdditionalCameraData>();
+            if (hd != null) hd.backgroundColorHDR = c;
         }
 
         public void Show(int index)
@@ -103,6 +116,8 @@ namespace ShadowProtocol
             if (an != null)
             {
                 an.runtimeAnimatorController = e.controller;
+                // Generic 컨트롤러(플레이어)면 Humanoid 아바타를 떼야 뼈 회전 커브가 적용된다
+                if (e.controller != null && e.controller.animationClips.Length > 0 && !e.controller.animationClips[0].humanMotion) an.avatar = null;
                 an.applyRootMotion = false;
                 an.updateMode = AnimatorUpdateMode.UnscaledTime;
                 an.cullingMode = AnimatorCullingMode.AlwaysAnimate;
@@ -149,7 +164,7 @@ namespace ShadowProtocol
                     rends[i].sharedMaterials = mats;
                 }
             }
-            if (cam != null) cam.backgroundColor = m == ViewMode.Wireframe ? new Color(0.02f, 0.03f, 0.05f) : new Color(0.07f, 0.09f, 0.12f);
+            SetBackground(m == ViewMode.Wireframe ? new Color(0.02f, 0.03f, 0.05f) : new Color(0.07f, 0.09f, 0.12f));
         }
 
         void ComputeStats()

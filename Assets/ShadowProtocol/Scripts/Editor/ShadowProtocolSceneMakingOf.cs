@@ -79,7 +79,9 @@ namespace ShadowProtocol.EditorTools
 
             list.Add(LoadSP2("container") != null && LoadSP2("container").name == "container_final" ? ContainerV2Card() : Card("container", "07", "컨테이너"));
             var captainCtrl = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(ShadowProtocolAnimBuilder.CaptainControllerPath);
-            list.Add(CharacterCard("female_agent", "플레이어(여성 잠입 요원)", PlayerModelPath, playerCtrl, 1.705f, new[] { "Idle", "Walk", "Run", "CrouchIdle", "CrouchWalk", "Throw" }));
+            // 웅크린 대기·걷기는 Mixamo 원본을 Blender에서 보정한 클립(VARCO 기반 프레임 시트 대신 보정 전후 시트를 넣는다, CharacterCard)
+            list.Add(CharacterCard("female_agent", "플레이어(여성 잠입 요원)", PlayerModelPath, playerCtrl, 1.705f, new[] { "Idle", "Walk", "Run", "Throw" },
+                "\n플레이어 웅크린 대기·걷기 애니메이션: Adobe Mixamo 원본 → Blender 보정"));
             list.Add(CharacterCard("heavyguard_v2", "중무장 경비병", GuardModelPath, guardCtrl, 1.903f, new[] { "Idle", "Walk", "Run", "LookAround", "HitFall", "Talk" },
                 "\n리그 수리: VARCO 원본은 상체 뼈 이름이 뒤섞여(오른팔이 Left*, 왼팔이 Head 한 뼈) 왼팔을 오른팔 미러로 다시 세움"));
             list.Add(CharacterCard("supervisor_v2", "경비 반장", CaptainModelPath, captainCtrl, 1.804f, new[] { "Idle", "Walk", "Run", "LookAround", "HitFall", "Talk" }));
@@ -111,6 +113,7 @@ namespace ShadowProtocol.EditorTools
             Img("characters_tpose_front.png", "세 인물 T포즈(정면) — 같은 23뼈 Humanoid 리그");
             Img("characters_skin_test_side.png", "피부 테스트(팔·무릎 굽힘)");
             foreach (var c in clips) Img($"anims\\{id}@{c}.png", $"애니메이션 {c} — 리타깃·발 고정·루프 정리");
+            Img($"anims\\{id}_crouch_mixamo_fix.png", "웅크린 대기·걷기 — Adobe Mixamo 원본 → Blender 보정(몸 비틀림 제거·웅크림 깊이·팔·발 고정)");
             return new MakingOfGallery.Entry
             {
                 title = title,

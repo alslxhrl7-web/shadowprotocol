@@ -12,7 +12,6 @@ namespace ShadowProtocol
     public class CameraFadeable : MonoBehaviour
     {
         public static readonly List<CameraFadeable> All = new List<CameraFadeable>();
-        static readonly int ColorId = Shader.PropertyToID("_Color");
 
         [Serializable]
         public class Slot
@@ -87,11 +86,13 @@ namespace ShadowProtocol
                 for (int i = 0; i < s.fade.Length; i++)
                 {
                     var m = s.fade[i];
-                    if (m == null || !m.HasProperty(ColorId)) continue;
-                    Color c = m.GetColor(ColorId);
+                    if (m == null) continue;
+                    int id = SPRender.MainColorId(m); // HDRP: _BaseColor
+                    if (!m.HasProperty(id)) continue;
+                    Color c = m.GetColor(id);
                     c.a = alpha;
                     s.renderer.GetPropertyBlock(mpb, i);
-                    mpb.SetColor(ColorId, c);
+                    mpb.SetColor(id, c);
                     s.renderer.SetPropertyBlock(mpb, i);
                 }
             }

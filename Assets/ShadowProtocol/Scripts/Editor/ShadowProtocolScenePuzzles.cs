@@ -120,16 +120,16 @@ namespace ShadowProtocol.EditorTools
             // ---------- 배전반 + 덕트 환풍기 ----------
             var fanT = new GameObject("DuctFan").transform;
             fanT.SetParent(root, false);
-            fanT.position = new Vector3(5.5f, 0.6f, 18.6f);
+            fanT.position = new Vector3(5.5f, 0.675f, 18.6f); // 덕트 높이 1.35m(ShadowProtocolLevelLayout.DuctH)에 맞춤
             var fanCol = fanT.gameObject.AddComponent<BoxCollider>();
-            fanCol.size = new Vector3(1.05f, 1.2f, 1.2f);
+            fanCol.size = new Vector3(1.05f, 1.35f, 1.2f);
             var blades = new GameObject("Blades").transform;
             blades.SetParent(fanT, false);
             blades.localPosition = new Vector3(-0.42f, 0f, 0f);
             var mFan = Mat("FanBlade", new Color(0.45f, 0.47f, 0.5f));
-            Box(blades, "BladeA", Vector3.zero, new Vector3(0.04f, 1.05f, 0.16f), mFan, false);
+            Box(blades, "BladeA", Vector3.zero, new Vector3(0.04f, 1.2f, 0.16f), mFan, false);
             Box(blades, "BladeB", Vector3.zero, new Vector3(0.04f, 0.16f, 1.05f), mFan, false);
-            Box(fanT, "Grille", new Vector3(-0.47f, 0f, 0f), new Vector3(0.02f, 1.15f, 1.15f), Mat("FanGrille", new Color(0.2f, 0.21f, 0.23f)), false).GetComponent<Renderer>().shadowCastingMode = ShadowCastingMode.Off;
+            Box(fanT, "Grille", new Vector3(-0.47f, 0f, 0f), new Vector3(0.02f, 1.3f, 1.15f), Mat("FanGrille", new Color(0.2f, 0.21f, 0.23f)), false).GetComponent<Renderer>().shadowCastingMode = ShadowCastingMode.Off;
             var fan = fanT.gameObject.AddComponent<DuctFan>();
             fan.blades = blades;
             fan.blocker = fanCol;

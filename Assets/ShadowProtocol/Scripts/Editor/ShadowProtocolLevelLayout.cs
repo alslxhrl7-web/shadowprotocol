@@ -17,7 +17,7 @@ namespace ShadowProtocol.EditorTools
     {
         static readonly Vector3 StartPos = new Vector3(-35.5f, 0f, -15f);
         static readonly Vector3 GoalPos = new Vector3(13.2f, 0f, 17.4f);
-        const float HallH = 6f, AnnexH = 3.5f, RoomH = 3f, DeckY = 3.2f;
+        const float HallH = 6f, AnnexH = 3.5f, RoomH = 3f, DeckY = 3.2f, DuctH = 1.35f;
 
         class LayoutMats
         {
@@ -80,7 +80,8 @@ namespace ShadowProtocol.EditorTools
             WallX(walls, "Wall_S", -16f, 16f, -11.5f, HallH, M.wall);
             WallZ(walls, "Wall_E_Hall", 15.5f, -12f, 12f, HallH, M.wall);
             WallZ(walls, "Wall_W_S", -15.5f, -12f, -8.5f, HallH, M.wall);
-            WallZ(walls, "Lintel_Vent", -15.5f, -8.5f, -7.3f, HallH - 1.2f, M.wall, 1f, 1.2f);       // 환기구(높이 1.2m, 웅크려야 통과)
+            // 환기구·덕트 높이 1.35m: 웅크려야 통과(웅크린 캡슐 1.1m, 서면 1.8m). 1.2m였을 때 웅크려 걷는 모델의 헬멧 꼭대기(1.28m)가 상인방을 뚫어 2026-11-17에 올림
+            WallZ(walls, "Lintel_Vent", -15.5f, -8.5f, -7.3f, HallH - DuctH, M.wall, 1f, DuctH);       // 환기구(웅크려야 통과)
             WallZ(walls, "Wall_W_M", -15.5f, -7.3f, -3f, HallH, M.wall);
             WallZ(walls, "Lintel_LoadingDoor", -15.5f, -3f, 1f, HallH - 3.5f, M.wall, 1f, 3.5f);   // 하역문(정면)
             WallZ(walls, "Wall_W_N", -15.5f, 1f, 12f, HallH, M.wall);
@@ -107,7 +108,7 @@ namespace ShadowProtocol.EditorTools
             WallZ(walls, "Wall_Vault_W1", 5.5f, 13.8f, 18f, AnnexH, M.wall);
             WallZ(walls, "Wall_Vault_W2", 5.5f, 19.2f, 19.5f, AnnexH, M.wall);
             WallZ(walls, "Lintel_VaultSideDoor", 5.5f, 12f, 13.8f, AnnexH - 2.4f, M.wall, 1f, 2.4f);   // 복도→서버실 옆문
-            WallZ(walls, "Lintel_Duct", 5.5f, 18f, 19.2f, AnnexH - 1.2f, M.wall, 1f, 1.2f);            // 창고→서버실 덕트(웅크려야 통과)
+            WallZ(walls, "Lintel_Duct", 5.5f, 18f, 19.2f, AnnexH - DuctH, M.wall, 1f, DuctH);            // 창고→서버실 덕트(웅크려야 통과)
             // (a) 야드 경계(보이지 않는 충돌벽, 펜스는 시각용으로 따로)
             Invisible(WallZ(walls, "Bound_W", -40.5f, -21f, 21f, 3f, M.wall));
             Invisible(WallX(walls, "Bound_S", -41f, -15f, -20.5f, 3f, M.wall));

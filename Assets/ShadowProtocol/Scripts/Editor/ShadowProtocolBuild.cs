@@ -18,6 +18,7 @@ namespace ShadowProtocol.EditorTools
                 return;
             }
             PlayerSettings.productName = "ShadowProtocol";
+            PlayerSettings.enableFrameTimingStats = true; // AutoTest가 FrameTimingManager로 GPU 프레임 시간을 잰다(HDRP 부하 확인)
             var opts = new BuildPlayerOptions
             {
                 scenes = new[] { ShadowProtocolSceneBuilder.ScenePath },

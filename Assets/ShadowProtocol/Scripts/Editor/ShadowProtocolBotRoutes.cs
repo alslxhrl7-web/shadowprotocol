@@ -29,7 +29,7 @@ namespace ShadowProtocol.EditorTools
 
         static GuardAI G(string n) { var go = GameObject.Find("Guards/" + n); return go != null ? go.GetComponent<GuardAI>() : null; }
 
-        static void VaultAndBack(List<Step> s, Vector3 entry, Vector3 inside)
+        static void VaultAndBack(List<Step> s, Vector3 entry, Vector3 inside, System.Func<bool> waitBeforeExit = null, string waitLabel = null)
         {
             // 문 앞 경비에게 발소리가 들리지 않게 웅크려 들어간다
             s.Add(Move(entry, crouch: true, nav: false, check: false, label: "enter vault"));
@@ -40,6 +40,8 @@ namespace ShadowProtocol.EditorTools
             s.Add(WaitUntil("data secured", () => GameManager.Instance.HasData, false));
             s.Add(Move(Core + LaserN * 0.75f, crouch: false, nav: false, check: false, label: "laser exit start"));
             s.AddRange(Laser(false));
+            // 레이저 안쪽(문에서 안 보이는 곳)에서 나갈 때를 기다린다
+            if (waitBeforeExit != null) s.Add(WaitUntil(waitLabel ?? "wait before exit", waitBeforeExit, true));
             s.Add(Move(inside, crouch: true, nav: false, check: false, label: "vault inside (out)"));
             s.Add(Move(entry, crouch: true, nav: false, hold: 1.5f, label: "vault door (out)"));
         }
@@ -50,7 +52,7 @@ namespace ShadowProtocol.EditorTools
             var s = new List<Step>();
             AddMoves(s, YardToFront);
             AddMoves(s, HallToVaultDoor);
-            s.Add(Move(V(11.5f, 10.25f), crouch: true, nav: false, hold: 5f, label: "front keypad"));
+            s.Add(Move(V(11.5f, 10.25f), crouch: true, nav: false, hold: 5f, label: "front keypad", standAfter: true)); // 키패드는 서서 조작
             s.Add(Keypad("Keypad_Front"));
             VaultAndBack(s, V(10f, 12.7f), V(10f, 14.2f));
             s.Add(Move(V(11.5f, 10.25f), crouch: true, nav: false, hold: 1f));
@@ -95,8 +97,10 @@ namespace ShadowProtocol.EditorTools
             s.Add(Move(V(6.9f, 12.9f), crouch: false, nav: false, check: false, label: "drag → vault"));
             s.Add(Move(V(7.1f, 16.6f), crouch: false, nav: false, check: false, label: "hide body in vault"));
             s.Add(Drag(false));
-            VaultAndBack(s, V(7.2f, 13.2f), V(8.8f, 13.6f));
-            s.Add(Move(V(6.9f, 12.9f), crouch: true, nav: false, check: false));
+            // 무전 확인하러 온 홀 동쪽 경비(Guard_Vault)가 순찰로 돌아갈 때까지 서버실 안에서 기다린다(웅크림 1.25 m/s에서 복도에서 마주침)
+            VaultAndBack(s, V(7.2f, 13.2f), V(8.8f, 13.6f), () => { var g = G("Guard_Vault"); return g == null || g.IsKnockedOut || g.State == GuardState.Patrol; }, "east guard back on patrol");
+            // 서버실 문 앞으로 나가기 전에 안전 확인(무전 확인하러 온 홀 동쪽 경비가 복도에 있으면 서버실 안에서 기다린다. 웅크림 1.25 m/s에서 마주쳤음)
+            s.Add(Move(V(6.9f, 12.9f), crouch: true, nav: false, hold: 1.5f));
             s.Add(Move(V(4.2f, 12.9f), crouch: true, nav: false, hold: 2f));
             s.Add(Move(V(-3.3f, 13.1f)));
             s.Add(Move(V(-11.3f, 13.2f)));

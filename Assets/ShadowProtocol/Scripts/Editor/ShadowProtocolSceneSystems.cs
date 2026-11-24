@@ -36,6 +36,8 @@ namespace ShadowProtocol.EditorTools
             var ctrl = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(ShadowProtocolAnimBuilder.ControllerPath(who));
             if (ctrl == null) return;
             animr.runtimeAnimatorController = ctrl;
+            // Generic 플레이어: Humanoid 아바타를 떼야 뼈 회전 커브가 그대로 적용된다
+            if (pc != null && ShadowProtocolAnimBuilder.PlayerGeneric) animr.avatar = null;
             animr.applyRootMotion = false;
             animr.cullingMode = pc != null ? AnimatorCullingMode.AlwaysAnimate : AnimatorCullingMode.CullUpdateTransforms;
             var drv = inst.AddComponent<CharacterAnimDriver>();
@@ -93,6 +95,8 @@ namespace ShadowProtocol.EditorTools
             // ---------- 플레이어 도구 ----------
             var tools = pc.gameObject.AddComponent<PlayerTools>();
             tools.player = pc;
+            var parkour = pc.gameObject.AddComponent<ParkourController>(); // Space: 뛰어넘기·슬라이딩
+            parkour.motion = AssetDatabase.LoadAssetAtPath<ParkourMotionData>(ShadowProtocolMixamoBake.MotionDataPath); // Mixamo 클립 이동 곡선(없으면 절차적)
             tools.cam = tpc;
             tools.bottleMat = Mat("Bottle", new Color(0.15f, 0.45f, 0.25f));
             tools.canMat = Mat("Can", new Color(0.7f, 0.72f, 0.75f));
@@ -290,8 +294,23 @@ namespace ShadowProtocol.EditorTools
 
         static Material FadeCopy(Material src)
         {
-            if (src == null || src.shader == null || !src.shader.name.StartsWith("Standard")) return null;
+            if (src == null || src.shader == null) return null;
+            bool hdrp = src.shader.name == "HDRP/Lit";
+            if (!hdrp && !src.shader.name.StartsWith("Standard")) return null;
             string path = $"{FadeFolder}/{src.name}_Fade.mat";
+            if (hdrp)
+            {
+                // 이미 HDRP로 바뀐 재질(가져오기 재질): 같은 값의 투명 복사본
+                var h = AssetDatabase.LoadAssetAtPath<Material>(path);
+                if (h == null) { h = new Material(src); AssetDatabase.CreateAsset(h, path); }
+                else { h.shader = src.shader; h.CopyPropertiesFromMaterial(src); }
+                UnityEngine.Rendering.HighDefinition.HDMaterial.SetSurfaceType(h, true);
+                h.SetFloat("_BlendMode", 0f);
+                if (h.HasProperty("_EnableBlendModePreserveSpecularLighting")) h.SetFloat("_EnableBlendModePreserveSpecularLighting", 0f);
+                UnityEngine.Rendering.HighDefinition.HDMaterial.ValidateMaterial(h);
+                EditorUtility.SetDirty(h);
+                return h;
+            }
             var m = AssetDatabase.LoadAssetAtPath<Material>(path);
             if (m == null)
             {

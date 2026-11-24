@@ -80,6 +80,10 @@ namespace ShadowProtocol
 
         public bool IsKnockedOut { get; private set; }
         public float KnockedOutTime { get; private set; }
+        /// <summary>기절 판정 후 쓰러지는 모습을 늦추는 시간(암살 연출에서 타격 순간에 맞춤)</summary>
+        [System.NonSerialized] public float FallDelay;
+        /// <summary>쓰러지는 애니메이션을 보여 줄 때인가</summary>
+        public bool ShowDown => IsKnockedOut && Time.time >= KnockedOutTime + FallDelay;
         /// <summary>기절한 위치(무전이 끊긴 곳). 동료는 여기로 확인하러 온다.</summary>
         public Vector3 KnockedOutPosition { get; private set; }
         /// <summary>다른 경비가 이 기절체를 발견했다</summary>

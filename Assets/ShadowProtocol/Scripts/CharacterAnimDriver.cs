@@ -79,7 +79,7 @@ namespace ShadowProtocol
             speed = Mathf.Lerp(speed, inst, 1f - Mathf.Exp(-10f * dt));
             if (speed < 0.05f) speed = 0f;
 
-            bool down = guard != null && guard.IsKnockedOut;
+            bool down = guard != null && guard.ShowDown;
             if (down) speed = 0f;
 
             float top = runNatural;

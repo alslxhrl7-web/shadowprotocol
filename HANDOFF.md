@@ -20,8 +20,8 @@
 |---|---|
 | 씬 다시 만들기 | 메뉴 `ShadowProtocol/Build Demo Scene` (씬은 손으로 고치지 말고 SceneBuilder 코드를 고친 뒤 다시 만든다) |
 | Windows 빌드 | 메뉴 `ShadowProtocol/Build Windows` → `Builds/Windows/ShadowProtocol.exe` |
-| 빌드 자동 검증 | `ShadowProtocol.exe -screen-fullscreen 0 -screen-width 1280 -screen-height 720 -autotest -logFile <경로>` → 30초간 경비 이동 거리·NavMesh 오류를 `[AutoTest]` 로그로 남기고 종료 |
-| 봇 플레이 | 플레이 모드에서 `ShadowProtocolBot.Run(이름, ShadowProtocolBotRoutes.HallQuiet() / OfficeTools() / CatwalkProbe(2))` |
+| 빌드 자동 검증 | `ShadowProtocol.exe -screen-fullscreen 0 -screen-width 1280 -screen-height 720 -autotest -logFile <경로>` → 30초간 경비 이동 거리·NavMesh 오류·GPU/CPU 프레임 시간을 `[AutoTest]` 로그로 남기고 종료. `-autotest-shots <폴더>`를 더하면 p7과 같은 6시점을 실제 화면으로 찍고 시점별 GPU 시간도 남긴다(hdrp_01~06) |
+| 봇 플레이 | 플레이 모드에서 `ShadowProtocolBot.FramesPerTick=8; ShadowProtocolBot.Run(이름, ShadowProtocolBotRoutes.HallQuiet() / OfficeTools() / CatwalkProbe(2))` (봇은 에디터를 멈춘 채 Step()으로 진행 — 이때 HDRP에서 인물이 유령처럼 보이는 것은 단계 진행 때만의 현상이라 봇이 인물 모션 벡터를 Camera로 바꿔 둔다) |
 
 주요 코드: `Assets/ShadowProtocol/Scripts/` (GuardAI, GuardDirector, PlayerController, PlayerTools, ThirdPersonCamera, GameManager, GameUI, NavBootstrap, AutoTest, 퍼즐 스크립트), 씬 생성기 `Scripts/Editor/ShadowProtocolScene*.cs`.
 
@@ -33,6 +33,7 @@
   1. (끝남, 위 2026-11-16 참고)
   2. (끝남) Blender 최종본 전부 반영: 환경·컨테이너·인물 3명·애니메이션 18개(2026-11-16, PROGRESS.md)
   3. (끝남) 플레이어 = 여성 잠입 요원, 경비 = 중무장 경비병(Yard·West·Vault·Door) / 경비 반장(Center·Office). 가져오기 메뉴 `ShadowProtocol/Import Characters Final (Blender)` → `Setup Animations`(씬 빌드에 포함)
+- 2026-11-24: 렌더 = HDRP 17.6 + Linear(`ShadowProtocolHDRP.ApplyToScene`, 빌더 마지막 단계). 볼륨 효과를 끌 때는 컴포넌트 active=false가 아니라 켠 채 세기 0(꺼 두면 HDRP 기본 볼륨 프로필 값이 적용됨 — 모션 블러 0.5가 그렇게 켜져 있었다). 플레이어 애니메이션 = Humanoid(`ShadowProtocolAnimBuilder.PlayerGeneric=false`), 클립 아바타 기준 자세를 모델 T자세로 맞춰(`MatchSkeleton`) Blender 자세와 ±1cm·±1.5° 일치. 웅크림 AC3식 절차적 덧입힘(CharacterProceduralPose stealth*)은 Blender 자세와 크게 다름 — 유지 여부 사용자 결정 대기. 자세 측정: `ShadowProtocolAnimBuilder.MeasureClipPose(클립, 프레임수)`, 플레이 모드 `ShadowProtocolPoseProbe`.
 - 알려진 문제: 소리는 귀로 확인 못 함(코드 합성음), 드로우콜 6개 시점 합계 4,679(2026-11-16 저녁, pixelLightCount 2·펜스 합치기·작은 장식 30m 컬링 반영), 좁은 복도 문틀에서 옆을 볼 때 카메라 거리 0.65~0.70m(드묾), 빌드 용량 약 416MB.
 
 ## 4. 아트 파이프라인 (반드시 지킬 규칙)

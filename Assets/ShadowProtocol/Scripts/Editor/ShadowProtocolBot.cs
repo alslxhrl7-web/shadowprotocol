@@ -35,6 +35,8 @@ namespace ShadowProtocol.EditorTools
         static bool entered;
         static float stepStart;
         static Vector3 lastSafe;
+        // 한 칸 전 안전 지점: 지금 선 자리(lastSafe)가 곧 위험해지면 여기로 물러난다(웅크림 속도 1.05로 느려진 뒤 경비 순찰 끝점에서 기다리다 들킨 문제)
+        static Vector3 prevSafe;
         static float waitAccum;
         static bool safeInit;
 
@@ -59,6 +61,19 @@ namespace ShadowProtocol.EditorTools
             EditorApplication.update -= Tick;
             EditorApplication.update += Tick;
             EditorApplication.isPaused = true;
+            SteppedRenderFix();
+        }
+
+        /// <summary>
+        /// 에디터를 멈춘 채 EditorApplication.Step()으로 진행하면 HDRP 디퍼드에서 스킨 메시(인물)의 Object 모션 벡터가
+        /// 이전 프레임 스킨과 어긋나 몸이 반투명 유령처럼 보인다(실시간 플레이·빌드에서는 생기지 않음, 2026-11-24 확인).
+        /// 봇·측정 중에만 플레이 모드 인스턴스의 인물 모션 벡터를 Camera로 바꾼다(씬 파일은 그대로).
+        /// </summary>
+        public static void SteppedRenderFix()
+        {
+            if (!EditorApplication.isPlaying) return;
+            foreach (var r in UnityEngine.Object.FindObjectsByType<SkinnedMeshRenderer>(FindObjectsInactive.Include))
+                r.motionVectorGenerationMode = MotionVectorGenerationMode.Camera;
         }
 
         static void OnGuardState(GuardAI g, GuardState prev, GuardState next)
@@ -101,7 +116,7 @@ namespace ShadowProtocol.EditorTools
             if (gm == null) return;
             if (player == null || !player) { player = UnityEngine.Object.FindAnyObjectByType<PlayerController>(); tools = player != null ? player.GetComponent<PlayerTools>() : null; }
             if (player == null) return;
-            if (!safeInit) { lastSafe = player.transform.position; safeInit = true; }
+            if (!safeInit) { lastSafe = prevSafe = player.transform.position; safeInit = true; }
             player.UseVirtualInput = true;
             player.VirtualMoveIsWorld = true;
             if (gm.Flow == GameManager.FlowState.Title || gm.Flow == GameManager.FlowState.Briefing) { gm.StartMission(); return; }
@@ -193,7 +208,7 @@ namespace ShadowProtocol.EditorTools
             // 1) 현재 목적지까지
             var first = new List<Vector3> { pos };
             if (agent != null && agent.hasPath && agent.remainingDistance > 0.4f) first.AddRange(agent.path.corners);
-            if (Walk(first, g.patrolSpeed, ref time, t, ref pos, ref fwd)) { extra = 12f; return; }
+            if (Walk(first, g.patrolSpeed, ref time, t, ref pos, ref fwd)) { extra = 12f + WalkSweep; return; }
             float w = Mathf.Max(0f, waitFull(idx) - (agent != null && agent.hasPath && agent.remainingDistance > 0.4f ? 0f : g.WaitTimer));
             if (time + w >= t) { extra = 42f; return; }
             time += w;
@@ -201,15 +216,21 @@ namespace ShadowProtocol.EditorTools
             {
                 var leg = legs[idx];
                 idx = (idx + 1) % legs.Length;
-                if (Walk(leg, g.patrolSpeed, ref time, t, ref pos, ref fwd)) { extra = 12f; return; }
+                if (Walk(leg, g.patrolSpeed, ref time, t, ref pos, ref fwd)) { extra = 12f + WalkSweep; return; }
                 w = waitFull(idx);
                 if (time + w >= t) { extra = 42f; return; }
                 time += w;
             }
         }
 
+        /// <summary>Walk가 '돌아서는 중'에서 멈췄으면 그 시선 훑기 반각(도), 아니면 0</summary>
+        static float WalkSweep;
+
         static bool Walk(List<Vector3> pts, float speed, ref float time, float t, ref Vector3 pos, ref Vector3 fwd)
         {
+            WalkSweep = 0f;
+            // GuardLocomotion: 출발·정지 가속(약 0.55s 손해)과 모퉁이에서 먼저 돌아서는 시간(250°/s)을 더한다
+            bool started = false;
             for (int i = 0; i + 1 < pts.Count; i++)
             {
                 Vector3 a = pts[i], b = pts[i + 1];
@@ -217,7 +238,22 @@ namespace ShadowProtocol.EditorTools
                 if (len < 0.01f) continue;
                 float dur = len / Mathf.Max(0.1f, speed);
                 Vector3 d = (b - a); d.y = 0f;
-                if (d.sqrMagnitude > 0.0001f) fwd = d.normalized;
+                if (d.sqrMagnitude > 0.0001f)
+                {
+                    float turn = Vector3.Angle(fwd, d);
+                    float pause = (turn > 20f ? turn / 250f : 0f) + (started ? 0f : 0.55f);
+                    started = true;
+                    if (time + pause >= t)
+                    {
+                        // 돌아서는 중: 시선이 옛 방향→새 방향을 훑는다 → 가운데를 보고 회전량 절반만큼 넓게
+                        pos = a;
+                        fwd = Vector3.Slerp(fwd, d.normalized, 0.5f).normalized;
+                        WalkSweep = turn * 0.5f;
+                        return true;
+                    }
+                    fwd = d.normalized;
+                    time += pause;
+                }
                 if (time + dur >= t) { pos = Vector3.Lerp(a, b, (t - time) / dur); return true; }
                 time += dur;
                 pos = b;
@@ -256,7 +292,10 @@ namespace ShadowProtocol.EditorTools
         }
 
         /// <summary>경로를 따라 이동(그리고 끝에서 머무는) 동안 들키지 않는가</summary>
-        public static bool PathSafe(List<Vector3> path, bool crouch, float speed, float extraHold, out string who)
+        public static bool PathSafe(List<Vector3> path, bool crouch, float speed, float extraHold, out string who) => PathSafe(path, crouch, speed, extraHold, false, out who);
+
+        /// <summary>standAtEnd: 도착 뒤 머무는 동안은 서 있다(키패드·배전반 조작 — 퍼즐은 서서만 조작)</summary>
+        public static bool PathSafe(List<Vector3> path, bool crouch, float speed, float extraHold, bool standAtEnd, out string who)
         {
             who = null;
             float total = 0f;
@@ -270,7 +309,8 @@ namespace ShadowProtocol.EditorTools
                 {
                     if (g == null || g.IsKnockedOut) continue;
                     Predict(g, t, out Vector3 gp, out Vector3 gf, out float ex, out bool hostile);
-                    if (Visible(g, gp, gf, ex, hostile, p, crouch)) { who = $"{g.name}@{t:0.0}s"; return false; }
+                    bool c = crouch && !(standAtEnd && t > legT);
+                    if (Visible(g, gp, gf, ex, hostile, p, c)) { who = $"{g.name}@{t:0.0}s"; return false; }
                 }
             }
             return true;
@@ -295,7 +335,9 @@ namespace ShadowProtocol.EditorTools
             d.y = 0f;
             player.VirtualCrouch = crouch;
             player.VirtualRun = run && !crouch;
-            player.VirtualMove = d.sqrMagnitude > 0.0001f ? new Vector2(d.x, d.z).normalized : Vector2.zero;
+            // 사람처럼 목표 40cm 안에서는 입력을 줄여 감속(플레이어 관성 때문에 정확한 지점에 서려면 필요)
+            float mag = Mathf.Clamp(d.magnitude / 0.4f, 0.25f, 1f);
+            player.VirtualMove = d.sqrMagnitude > 0.0001f ? new Vector2(d.x, d.z).normalized * mag : Vector2.zero;
         }
 
         static void Hold(bool crouch)
@@ -306,12 +348,13 @@ namespace ShadowProtocol.EditorTools
         }
 
         /// <summary>안전할 때 출발해 목표까지 이동(nav: NavMesh 경로, 아니면 직선)</summary>
-        public static Step Move(Vector3 target, bool crouch = true, bool nav = true, float hold = 2.5f, bool check = true, string label = null)
+        public static Step Move(Vector3 target, bool crouch = true, bool nav = true, float hold = 2.5f, bool check = true, string label = null, bool standAfter = false)
         {
             List<Vector3> path = null;
             int corner = 0;
             bool committed = false;
             bool retreating = false;
+            Vector3 retreatTo = Vector3.zero;
             float lastCheck = -1f;
             return new Step
             {
@@ -323,27 +366,34 @@ namespace ShadowProtocol.EditorTools
                     float speed = crouch ? player.crouchSpeed : player.walkSpeed;
                     if (!committed)
                     {
-                        if (Now - lastCheck < 0.1f) { Hold(crouch); waitAccum += Time.deltaTime; return false; }
+                        if (Now - lastCheck < 0.1f)
+                        {
+                            // 후퇴 중에는 검사 사이에도 계속 이동(플레이어 관성 때문에 한 프레임씩 입력하면 출발하지 못한다)
+                            if (retreating && Vector3.Distance(p, retreatTo) > 0.3f) { Drive(retreatTo, true, false); return false; }
+                            Hold(crouch); waitAccum += Time.deltaTime; return false;
+                        }
                         lastCheck = Now;
                         path = nav ? NavPath(p, target) : new List<Vector3> { p, target };
                         if (path.Count > 0) path[path.Count - 1] = new Vector3(target.x, path[path.Count - 1].y, target.z);
-                        if (!check || PathSafe(path, crouch, speed, hold, out string who))
+                        if (!check || PathSafe(path, crouch, speed, hold, standAfter, out string who))
                         {
                             committed = true;
                             corner = 1;
                         }
                         else
                         {
-                            // 지금 자리도 곧 위험하면 직전 안전 지점으로 물러난다
+                            // 지금 자리도 곧 위험하면 직전 안전 지점(지금 그 자리면 한 칸 전 지점)으로 물러난다
                             var here = new List<Vector3> { p, p };
-                            if (!PathSafe(here, true, speed, 4f, out string w2) && Vector3.Distance(p, lastSafe) > 0.5f && !retreating)
+                            Vector3 back = Vector3.Distance(p, lastSafe) > 0.5f ? lastSafe : prevSafe;
+                            if (!retreating && Vector3.Distance(p, back) > 0.5f && !PathSafe(here, true, speed, 4f, out string w2))
                             {
                                 retreating = true;
-                                Log.AppendLine($"    t={Now:0.0} 후퇴({w2}) → {lastSafe.x:0.0},{lastSafe.z:0.0}");
+                                retreatTo = back;
+                                Log.AppendLine($"    t={Now:0.0} 후퇴({w2}) → {back.x:0.0},{back.z:0.0}");
                             }
                             if (retreating)
                             {
-                                if (Vector3.Distance(p, lastSafe) > 0.3f) { Drive(lastSafe, true, false); return false; }
+                                if (Vector3.Distance(p, retreatTo) > 0.3f) { Drive(retreatTo, true, false); return false; }
                                 retreating = false;
                             }
                             Hold(crouch);
@@ -351,7 +401,7 @@ namespace ShadowProtocol.EditorTools
                             return false;
                         }
                     }
-                    if (corner >= path.Count) { Hold(crouch); lastSafe = p; return true; }
+                    if (corner >= path.Count) { Hold(crouch); prevSafe = lastSafe; lastSafe = p; return true; }
                     Vector3 c = path[corner];
                     Vector3 d = c - p; d.y = 0f;
                     if (d.magnitude < (corner == path.Count - 1 ? 0.2f : 0.35f)) { corner++; return false; }
@@ -521,12 +571,12 @@ namespace ShadowProtocol.EditorTools
                     if (gm == null || gm == old || Time.timeSinceLevelLoad < 0.1f) return false;
                     player = UnityEngine.Object.FindAnyObjectByType<PlayerController>();
                     tools = player.GetComponent<PlayerTools>();
-                    lastSafe = player.transform.position;
+                    lastSafe = prevSafe = player.transform.position;
                     return true;
                 }
             };
         }
 
-        public static void ResetSafe() { if (player != null) lastSafe = player.transform.position; }
+        public static void ResetSafe() { if (player != null) lastSafe = prevSafe = player.transform.position; }
     }
 }
