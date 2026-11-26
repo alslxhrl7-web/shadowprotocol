@@ -34,7 +34,8 @@ namespace ShadowProtocol
 
         [Header("Framing")]
         public float standPivotHeight = 1.6f;
-        public float crouchPivotHeight = 1.05f;
+        // 웅크린 머리 꼭대기 0.89~0.94m(8차 클립)에 맞춤: 1.05에서는 기본 줌에서 캐릭터가 서 있을 때보다 화면 높이의 3% 아래에 잡혔다(2026-11-25 측정)
+        public float crouchPivotHeight = 0.95f;
         public Vector3 shoulderOffset = new Vector3(0.45f, 0f, 0f);
         public Vector3 aimShoulderOffset = new Vector3(0.7f, 0.1f, 0f);
         public float followSharpness = 14f;

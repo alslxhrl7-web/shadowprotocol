@@ -111,8 +111,10 @@ namespace ShadowProtocol.EditorTools
 
                     // 기준 자세(T자세): 클립 FBX의 휴식 자세는 T자세가 아니다(첫 동작 자세 — 팔 46~62°, 머리 56°, 무릎 28° 차이, 2026-11-24 측정).
                     // 클립 아바타가 그것을 T자세로 삼으면 근육 값이 그만큼 어긋나 Humanoid 재생에서 몸통이 덜 숙고 팔꿈치가 펴지고 골반이 4cm 뜬다.
-                    // → 모델 아바타의 기준 자세를 뼈 이름으로 옮겨 넣는다(플레이어만 — 경비는 지금 모습 유지).
-                    if (d.who == Player)
+                    // → 모델 아바타의 기준 자세를 뼈 이름으로 옮겨 넣는다. 플레이어(2026-11-24)에 이어 경비 두 명의 Blender 클립에도 적용(2026-11-25):
+                    //   경비 클립 12개도 기준 자세가 모델과 위팔 21~70°·손 13~81°·Run 발 134~139° 어긋나 게임 자세가 Blender와 최대 26cm(발)·정강이 34° 달랐다.
+                    //   (Mixamo·Generic 클립은 위에서 modelImp가 null이라 여기 오지 않는다)
+                    if (d.who == Player || d.who == Heavy || d.who == Captain)
                     {
                         var skel = MatchSkeleton(modelImp.humanDescription.skeleton, imp.humanDescription.skeleton);
                         if (skel != null)

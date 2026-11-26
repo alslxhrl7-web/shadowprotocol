@@ -225,6 +225,7 @@ namespace ShadowProtocol.EditorTools
             string n = matName.ToLowerInvariant();
             if (n.Contains("lamphead") || n.Contains("lens") || n.Contains("worklight") || n.Contains("bulb")) return 4000f * Mathf.Max(0.5f, strength / 2.5f);
             // 넓은 바닥 표시(시작·탈출 지점): 실제로는 도색 + 약한 LED 띠. 크게 빛나면 화면 GI로 주변이 통째로 물든다.
+            // (시작 판은 2026-11-25부터 빌더에서 발광을 끄므로 아래 줄은 다시 발광을 켤 때만 쓰인다)
             if (n.Contains("startpad")) return 0.15f;
             if (n.Contains("extractmarker")) return 0.5f * strength;
             return strength * ShadowProtocol.SPRender.NitsPerEmissionUnit;

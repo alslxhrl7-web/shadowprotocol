@@ -74,7 +74,7 @@ namespace ShadowProtocol.EditorTools
             var mGuardVisor = Mat("GuardVisor", new Color(1f, 0.85f, 0.3f), 1.5f);
             var mOrb = Mat("StatusOrb", new Color(0.35f, 0.95f, 0.45f), 1.5f);
             var mGoal = Mat("Goal", new Color(0.2f, 1f, 0.55f), 3f);
-            var mStart = Mat("StartPad", new Color(0.06f, 0.16f, 0.30f), 0.8f); // HDRP: 바닥 도색처럼 어두운 파랑(밝은 판이 밤 화면에서 튀었음)
+            var mStart = Mat("StartPad", new Color(0.12f, 0.28f, 0.52f)); // 바닥에 칠한 파랑 도료. 발광 없음(2026-11-25): HDRP에서 0.15 nits 발광이 밤 야드 아스팔트(약 0.02 nits)보다 밝아 자동 노출에 판만 스스로 빛나 튀었다 → 조명을 받아야만 보인다
             var mCone = UnlitTransparentMat("VisionCone");
             var mRing = UnlitTransparentMat("NoiseRing");
             var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
@@ -1062,6 +1062,10 @@ namespace ShadowProtocol.EditorTools
             else
             {
                 m.DisableKeyword("_EMISSION");
+                // 2026-11-25: 예전에 발광이던 재질(StartPad)은 HDRP/Lit에서 Standard로 돌아올 때 흰 _EmissionColor와 RealtimeEmissive가 남아,
+                // 변환기(ShadowProtocolHDRP.ConvertMaterial)가 흰색 0.15 nits 발광으로 다시 켰다 → 색까지 검정으로 되돌린다
+                if (m.HasProperty("_EmissionColor")) m.SetColor("_EmissionColor", Color.black);
+                m.globalIlluminationFlags = MaterialGlobalIlluminationFlags.EmissiveIsBlack;
             }
             EditorUtility.SetDirty(m);
             return m;
